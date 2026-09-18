@@ -5,9 +5,15 @@
 
 ## 1. Scope
 
-Текущий scope — read-only Strategy Recorder.
+Проект имеет два параллельных scope:
 
-Любая новая задача сначала проверяется на соответствие текущему этапу. Если она преждевременно превращает Recorder в Strategy Engine или Trading Bot — не реализовывать без отдельного явного решения.
+### A. Strategy Recorder
+Существующий `src/recorder/` — permanently read-only. Его задача: machine truth, research, trader explanations, reconciliation, dataset integrity.
+
+### B. Configurable Grid Execution Engine
+Отдельный будущий компонент базовой механики. Его разрешено разрабатывать параллельно с Recorder, если он исполняет **заранее заданную трейдером конфигурацию**, а не придумывает decision logic.
+
+Нельзя превращать Recorder в Strategy Engine. Если появляется trading/write functionality, она должна жить только в отдельном Execution Engine.
 
 ## 2. Bybit
 
@@ -19,17 +25,36 @@
 - Сохранять raw payload до нормализации.
 - Учитывать reconnect, partial executions и duplicate/repeated events.
 
-## 3. Read-only
+## 3. Recorder read-only boundary
 
-В проекте не должно быть торговых методов и вызовов:
+Ограничение read-only относится **строго и навсегда к Recorder-контурy**.
+
+В `src/recorder/` и связанных Recorder-модулях запрещены:
 - place order;
 - amend order;
 - cancel order;
 - close position;
 - set leverage;
-- set TP/SL.
+- set TP/SL;
+- любые write/trading endpoints.
 
-Private collector должен работать только с read-only API key.
+Private collector Recorder должен работать только с read-only API key.
+
+### Отдельный Execution Engine
+
+Write/trading methods допускаются только в отдельном компоненте Execution Engine, не импортируемом Recorder'ом как часть его runtime path.
+
+Для Execution Engine обязательно:
+- отдельная конфигурация;
+- отдельный API key;
+- отдельный permission boundary;
+- audit trail;
+- idempotency;
+- защита от duplicate commands;
+- explicit safety checks;
+- тестовый/shadow режим до real execution.
+
+До отдельного решения write-enabled key не подключать к production execution.
 
 Secrets не логировать и не хранить в Git.
 
@@ -140,15 +165,19 @@ AI summary никогда не заменяет оригинальную тра�
 
 Никогда не додумывать торговые правила.
 
-Использовать три уровня:
+Использовать как минимум:
 
 1. Observed Fact
 2. Trader Explanation
-3. Confirmed Rule
+3. Candidate Rule
+4. Confirmed Rule
+5. Open Question / Contradiction
 
-Пример трейдера не является правилом.
+Пример трейдера не является универсальным правилом.
 
 При противоречии между объяснениями — зафиксировать ambiguity и запросить подтверждение.
+
+Важно: Execution Engine может реализовывать **конфигурируемую механику**, даже если reason/decision rule для выбора параметров ещё неизвестен. В таком случае параметры вводит трейдер; система не должна самостоятельно превращать CANDIDATE в автоматическое решение.
 
 ## 12. Coding principles
 
@@ -189,6 +218,13 @@ AI summary никогда не заменяет оригинальную тра�
 - обновлять README/PROJECT_INSTRUCTIONS при изменении архитектурного смысла;
 - не менять silently смысл существующих fields.
 
+При добавлении Execution Engine:
+- не помещать trading write-path в `src/recorder/`;
+- не переиспользовать Recorder read-only key;
+- не смешивать Recorder storage semantics с execution command state;
+- документировать границу ответственности;
+- отдельно тестировать command idempotency, partial fills, cancel/amend races и restart recovery.
+
 ## 15. Main rule
 
 Если есть выбор между:
@@ -196,3 +232,13 @@ AI summary никогда не заменяет оригинальную тра�
 - сохранением исходной реальности;
 
 выбирать сохранение исходной реальности.
+
+Архитектурный инвариант:
+
+```text
+Recorder = observe / record / explain / reconcile
+Execution Engine = execute explicitly configured mechanics
+Risk Manager = future independent safety/decision layer
+```
+
+Никогда не смешивать эти ответственности.
