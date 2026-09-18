@@ -1,0 +1,1 @@
+"""Russian Telegram UX boundaries."""

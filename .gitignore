@@ -1,0 +1,31 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Recorder data (private/raw account and market data, test artifacts, etc.)
+# The whole tree is excluded, not just known subfolders — data/ has held
+# ad-hoc smoke-test output before (e.g. data/reconnect-smoke-*/) that no
+# enumerated allowlist would have caught. Directories are recreated
+# automatically by the app; nothing here needs a tracked placeholder.
+data/
+
+# Databases (defense in depth, wherever they might appear)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/*
+!logs/.gitkeep

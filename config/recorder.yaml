@@ -1,0 +1,45 @@
+environment: mainnet
+storage:
+  sqlite:
+    enabled: true
+    path: ./data/db/strategy.db
+    wal: true
+  raw_jsonl:
+    enabled: true
+    directory: ./data/raw
+    rotation: daily
+  parquet:
+    directory: ./data/exports
+market:
+  auto_discovery: true
+  discovery_interval_seconds: 1
+  save_closed_klines: true
+  save_open_kline_updates_raw: false
+  snapshots:
+    enabled: true
+    on_account_event: true
+reconciliation:
+  settle_coins: [USDT, USDC]
+  enabled: true
+  on_startup: true
+  on_reconnect: true
+  periodic: true
+  interval_seconds: 300
+telegram:
+  enabled: true
+  language: ru
+  notifications:
+    executions: true
+    partial_fills: true
+    position_changes: true
+    grid_activity: true
+    wallet_changes: false
+    technical_events: false
+  event_linking:
+    lookback_minutes: 10
+    lookforward_minutes: 3
+transcription:
+  enabled: true
+  language: ru
+dataset:
+  timezone_storage: UTC

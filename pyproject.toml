@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bybit-strategy-recorder"
+version = "0.2.0"
+description = "Read-only Bybit V5 recorder for reconstructing manual trading decisions"
+requires-python = ">=3.12"
+dependencies = [
+  "aiohttp>=3.9",
+  "certifi>=2024.0",
+  "PyYAML>=6.0",
+  "python-dotenv>=1.0",
+  "pydantic>=2.7",
+  "pyarrow>=16.0",
+]
+
+[project.optional-dependencies]
+telegram = ["aiogram>=3.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6"]
+
+[project.scripts]
+recorder = "recorder.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

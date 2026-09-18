@@ -1,0 +1,15 @@
+exchange: bybit
+category: linear
+symbols: []
+market:
+  primary_kline_interval: "1"
+  kline_intervals: ["1", "15", "60", "120", "240", "720"]
+  ticker:
+    enabled: true
+    raw_recording: sampled
+    sample_interval_seconds: 1
+  public_trades:
+    enabled: false
+  orderbook:
+    enabled: false
+    depth: 1
