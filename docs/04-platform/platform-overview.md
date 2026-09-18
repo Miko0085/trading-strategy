@@ -1,34 +1,110 @@
 # Platform Overview
 
-**Статус: OBSERVED FACT (Recorder) / FUTURE (остальное)**
+**Статус: OBSERVED FACT (Recorder) / NEXT PLATFORM LAYER (Execution Engine) / FUTURE (Risk Manager)**
 
-Платформа концептуально состоит из слоёв:
+Платформа разделена на независимые слои:
 
+```text
+┌────────────────────────────────────────────┐
+│ Strategy / Platform Documentation          │
+│ docs/                                      │
+├────────────────────────────────────────────┤
+│ Configurable Grid Execution Engine         │
+│ NEXT PLATFORM LAYER                        │
+│ mechanical execution of trader config      │
+├────────────────────────────────────────────┤
+│ Future Risk Manager                        │
+│ FUTURE independent layer                   │
+├────────────────────────────────────────────┤
+│ Bybit Strategy Recorder                    │
+│ EXISTS / PERMANENTLY READ-ONLY             │
+│ src/recorder/                               │
+├────────────────────────────────────────────┤
+│ Bybit V5                                   │
+└────────────────────────────────────────────┘
 ```
-┌─────────────────────────────────────────┐
-│  Strategy / Platform documentation       │  ← docs/ (эта папка)
-│  (эта папка: правила, алгоритм, roadmap) │
-├─────────────────────────────────────────┤
-│  Future Execution Engine   (FUTURE)      │  ← ещё не существует
-│  Future Risk Manager       (FUTURE)      │
-├─────────────────────────────────────────┤
-│  Bybit Strategy Recorder   (EXISTS)      │  ← src/recorder/, реализовано
-│  read-only, без торговых вызовов         │
-├─────────────────────────────────────────┤
-│  Bybit V5 (Exchange)                     │
-└─────────────────────────────────────────┘
+
+## 1. Strategy Recorder
+
+Recorder уже существует и остаётся **permanently read-only**.
+
+Он отвечает за:
+
+- raw Bybit events;
+- orders / executions / positions / wallet;
+- market context;
+- reconciliation;
+- trader notes / voice;
+- timeline;
+- dataset export;
+- machine truth.
+
+Recorder никогда не должен размещать, изменять или отменять реальные ордера.
+
+## 2. Configurable Grid Execution Engine
+
+Execution Engine — **отдельный компонент**, который разрешено разрабатывать параллельно с исследованием стратегии.
+
+Его задача — механически исполнять уже заданную трейдером конфигурацию:
+
+- Long Grid / Short Grid;
+- N configurable Grid Orders;
+- coin quantity per order;
+- Strategy Lot accounting;
+- partial TP steps;
+- manual amend/cancel;
+- audit trail.
+
+Он не обязан ждать полной формализации причины выбора spacing/qty/TP.
+
+Но он не должен сам придумывать эти параметры.
+
+Подробнее: [future-execution-engine.md](future-execution-engine.md).
+
+## 3. Risk Manager
+
+Risk Manager — отдельный будущий слой.
+
+Он будет контролировать:
+
+- margin;
+- equity;
+- exposure;
+- allocation limits;
+- risk states;
+- emergency actions.
+
+Он не прогнозирует рынок и не использует новости, sentiment или technical indicators.
+
+## 4. Жёсткая граница компонентов
+
+```text
+Recorder
+  READ ONLY
+  ↓
+observes reality
+
+Execution Engine
+  WRITE CAPABLE
+  ↓
+executes explicit configuration
+
+Risk Manager
+  FUTURE
+  ↓
+may allow/deny/modify actions by confirmed risk rules
 ```
 
-## Что уже существует
+API keys, runtime responsibilities и safety boundaries у Recorder и Execution Engine должны быть раздельными.
 
-Только **Recorder** (`src/recorder/`) — read-only система записи рыночных и аккаунт-событий. Она не размещает, не изменяет и не отменяет ордера. Роль подробно — [recorder-role.md](recorder-role.md), интеграция с Bybit — [bybit-integration.md](bybit-integration.md), модель данных — [data-model.md](data-model.md).
+## 5. Documentation layer
 
-## Что не существует (FUTURE)
+`docs/` хранит canonical knowledge:
 
-Execution Engine и Risk Manager — будущие компоненты, которые появятся только после формализации стратегии (Phase 2+, см. [06-development/roadmap.md](../06-development/roadmap.md)). Черновое описание — [future-execution-engine.md](future-execution-engine.md) и [03-risk/future-risk-manager.md](../03-risk/future-risk-manager.md).
+- confirmed mechanics;
+- candidate rules;
+- open questions;
+- architecture decisions;
+- roadmap.
 
-## Границы ответственности
-
-- **Recorder** отвечает за то, «что произошло» (machine truth) и «что сказал трейдер» (trader reasoning), не смешивая их.
-- **docs/** отвечает за накопленное знание о стратегии, извлечённое из данных Recorder'а плюс объяснений трейдера.
-- **Future Execution Engine / Risk Manager** — единственные компоненты, которые в будущем смогут отправлять реальные торговые вызовы, и то только после отдельного явного решения (см. правило в [06-development/decisions.md](../06-development/decisions.md)).
+Документация не является runtime-компонентом и не должна содержать приватные account dumps/API secrets.
