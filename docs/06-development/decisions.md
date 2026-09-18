@@ -81,6 +81,24 @@
 
 ---
 
+---
+
+**Date:** 2026-09-18  
+**Decision:** Strategy Recorder is permanently read-only.  
+**Status:** Active — ARCHITECTURAL INVARIANT  
+**Reason:** Recorder is the machine-truth / research layer and must not be able to alter the trading reality it records.  
+**Consequences:** No place/amend/cancel/close/set-leverage/set-TP-SL write path may be added to `src/recorder/`. Recorder always uses a dedicated read-only Bybit key.
+
+---
+
+**Date:** 2026-09-18  
+**Decision:** Configurable Grid Execution Engine is a separate component and may be developed in parallel with Strategy Capture.  
+**Status:** Active — ARCHITECTURAL INVARIANT  
+**Reason:** Mechanical execution of trader-defined parameters does not require full formalization of decision logic.  
+**Consequences:** Trading/write API methods, when later enabled, live only in a separate Execution Engine with a separate API key, state, audit trail and safety controls. Recorder never imports this write path into its runtime responsibility.
+
+---
+
 ## Knowledge rule
 
 Не превращать EXAMPLE / TRADER EXPLANATION / CANDIDATE в CONFIRMED RULE без явного подтверждения трейдера.
