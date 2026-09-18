@@ -1,81 +1,86 @@
 # Decision Log
 
-Формат записи: Date / Decision / Status / Reason / Consequences.
+Формат: Date / Decision / Status / Reason / Consequences.
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** No external indicators/news/sentiment.
-**Status:** Active
-**Reason:** Стратегия — детерминированная математическая система на основе цены и состояния аккаунта (см. [00-overview/principles.md](../00-overview/principles.md)).
-**Consequences:** RSI/MACD/MA/Bollinger/Stochastic, новости, sentiment, AI-прогнозы не используются нигде в базовой стратегии и в будущем Risk Manager.
+**Date:** 2026-09-18  
+**Decision:** No external indicators/news/sentiment.  
+**Status:** Active  
+**Reason:** Стратегия должна быть детерминированной математической системой.  
+**Consequences:** Technical indicators, news, sentiment, analyst forecasts и AI price prediction не используются для торговых решений.
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** Coin quantity = primary sizing unit.
-**Status:** Active
-**Reason:** USDT notional/margin/PnL — производные величины, а не основа расчётов объёма.
-**Consequences:** Все формулы объёма (grid sizing, partial close) выражаются в coin quantity, не в долларах.
+**Date:** 2026-09-18  
+**Decision:** Coin quantity = primary sizing unit.  
+**Status:** Active — CONFIRMED  
+**Consequences:** original_qty / remaining_qty / closed_qty хранятся в монетах. Notional/margin/PnL — производные показатели.
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** Grid spacing configurable per order.
-**Status:** Active
-**Reason:** Конкретные проценты — предмет настройки/эксперимента, не хардкода.
-**Consequences:** Будущая реализация не должна фиксировать проценты spacing в коде как константы.
+**Date:** 2026-09-18  
+**Decision:** Grid Orders are configurable Limit Orders.  
+**Status:** Active — CONFIRMED  
+**Consequences:** Spacing и qty задаются per order, без hardcoded процентов.
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** Next Grid Order price can be calculated from previous Limit Order price.
-**Status:** Active
-**Reason:** Наблюдаемый механизм построения сетки; не требует ожидания fill предыдущего уровня.
-**Consequences:** Grid можно строить полностью заранее, не дожидаясь исполнений.
+**Date:** 2026-09-18  
+**Decision:** Next Grid Order may be calculated from previous configured Limit Order price.  
+**Status:** Active — CONFIRMED  
+**Consequences:** Для построения сетки не требуется ждать fill предыдущего уровня.
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** Executed Grid Order becomes individual Strategy Lot.
-**Status:** Active (концептуально; таблиц в БД пока нет)
-**Reason:** Bybit агрегирует позицию, но независимый учёт нужен для корректного partial TP.
-**Consequences:** Требует будущей модели данных отдельно от текущей схемы Recorder'а (см. [04-platform/data-model.md](../04-platform/data-model.md)).
+**Date:** 2026-09-18  
+**Decision:** Executed Grid Order becomes individual Strategy Lot.  
+**Status:** Active — CONFIRMED concept  
+**Consequences:** Bybit aggregate position не заменяет внутренний lot accounting.
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** TP calculated from individual Lot execution price.
+**Date:** 2026-09-18  
+**Decision:** TP is calculated from actual average execution price of the individual Strategy Lot.  
 **Status:** Active — CONFIRMED
-**Reason:** Явно сформулировано как правило (не относительно общей average entry, не относительно предыдущего TP).
-**Consequences:** См. [05-research/confirmed-rules.md](../05-research/confirmed-rules.md).
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** Partial close percentage based on original lot quantity.
+**Date:** 2026-09-18  
+**Decision:** Partial close percentage is based on original_qty of the individual Strategy Lot.  
 **Status:** Active — CONFIRMED
-**Reason:** Второй этап TP не должен пересчитываться от уже уменьшенного remaining_qty.
-**Consequences:** См. [01-strategy/partial-take-profit.md](../01-strategy/partial-take-profit.md).
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** Risk Manager postponed until base mechanics are formalized.
-**Status:** Active
-**Reason:** Сначала механика и подтверждённые правила, потом автоматизация решений о риске.
-**Consequences:** Phase 3 не начинается раньше значимого прогресса в Phase 1–2 (см. [roadmap.md](roadmap.md)).
+**Date:** 2026-09-18  
+**Decision:** Long and Short are separate configurable grids in Hedge Mode.  
+**Status:** Active — CONFIRMED high-level mechanics  
+**Consequences:** Exact parameters may differ by side and by order.
 
 ---
 
-**Date:** 2026-09-18
-**Decision:** `docs/` is the canonical strategy/public documentation directory.
-**Status:** Active
-**Reason:** Нужен единый, версионируемый, публикуемый через GitBook слой документации, отдельный от кода Recorder'а. Отдельная папка `docx/` не создавалась — используется уже существующая `docs/` (переименование пустой заготовки), чтобы не плодить два похожих каталога.
-**Consequences:** Все новые стратегические/платформенные документы добавляются в `docs/`, не в корень репозитория и не в новую папку.
+**Date:** 2026-09-18  
+**Decision:** Base mechanical Execution Engine may be developed in parallel with strategy research.  
+**Status:** Active  
+**Reason:** Механика может исполнять заранее заданные трейдером параметры, не ожидая полной формализации причины выбора этих параметров.  
+**Consequences:** Это не разрешает autonomous strategy decisioning и не превращает Recorder в write-enabled component.
 
 ---
 
-## Правило ведения этого журнала
+**Date:** 2026-09-18  
+**Decision:** Risk Manager is a later independent layer.  
+**Status:** Active  
+**Consequences:** Dynamic TP adaptation, forced unloading и автоматический rebalancing не входят в первую базовую механику.
 
-Никогда не помечать пункт как `CONFIRMED` в [05-research/confirmed-rules.md](../05-research/confirmed-rules.md), если явное подтверждение трейдера отсутствует. Решения об архитектуре документации (как записи выше) — это решения владельца проекта, а не торговые правила, и фиксируются здесь отдельно от `05-research/`.
+---
+
+**Date:** 2026-09-18  
+**Decision:** Public documentation must not contain raw/private trading identifiers or account data.  
+**Status:** Active  
+**Consequences:** GitBook examples use synthetic values; real event/order IDs stay in private research data.
+
+---
+
+## Knowledge rule
+
+Не превращать EXAMPLE / TRADER EXPLANATION / CANDIDATE в CONFIRMED RULE без явного подтверждения трейдера.

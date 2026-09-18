@@ -1,31 +1,66 @@
 # Roadmap
 
-**Статус: FUTURE / TRADER EXPLANATION**
+## Основной принцип
 
-## Главный принцип очерёдности
+> Сначала фиксируем реальную механику. Потом подтверждаем неизвестные decision rules. Механическое исполнение заранее заданной конфигурации может развиваться параллельно с исследованием. Автономные решения и Risk Manager — только после формализации и тестирования.
 
-> Сначала фиксируем реальную механику. Потом подтверждаем правила. Потом формализуем алгоритм. Потом тестируем. И только потом автоматизируем торговые решения.
+## Phase 1A — Strategy Capture / Recorder
 
-Не оптимизировать стратегию "от себя", не предсказывать рынок, не добавлять внешние сигналы, не превращать примеры трейдера в правила без подтверждения (см. [00-overview/principles.md](../00-overview/principles.md)).
+Продолжать:
 
-## Фазы
+- записывать Bybit machine truth;
+- сохранять trader explanations;
+- связывать действия и контекст;
+- выявлять candidate rules;
+- подтверждать/опровергать гипотезы.
 
-### Phase 1 — Base Strategy Mechanics (текущая)
+Recorder остаётся read-only.
 
-Формализация механики: Long/Short, Hedge Mode, Grid Orders, coin quantity, order spacing, Strategy Lots, partial TP, partial unloading, order/grid lifecycle, ручное изменение параметров. См. [00-overview/goals.md](../00-overview/goals.md).
+## Phase 1B — Base Strategy Mechanics
 
-### Phase 2 — Formalization / Testing
+Формализовать и затем технически реализовать отдельно от Recorder:
 
-Превращение накопленных `CONFIRMED` правил ([05-research/confirmed-rules.md](../05-research/confirmed-rules.md)) в проверяемый алгоритм и его тестирование на исторических данных Recorder'а. Не начинается, пока не закрыта значимая часть [open-questions.md](../05-research/open-questions.md).
+- Long Grid / Short Grid;
+- configurable N Grid Orders;
+- limit price chain;
+- coin quantity per order;
+- Strategy Lot accounting;
+- partial TP steps;
+- remaining_qty;
+- ручное редактирование/отмена конфигурации;
+- audit trail.
 
-### Phase 3 — Risk Manager
+Эта фаза **не обязана ждать полной формализации decision logic**, потому что параметры задаёт трейдер.
 
-См. [03-risk/future-risk-manager.md](../03-risk/future-risk-manager.md). Не реализуется раньше формализации базовой механики.
+## Phase 2 — Shadow / Simulation / Testing
 
-### Phase 4 — Additional internal managers/helpers
+- воспроизводить механику без реального риска;
+- сравнивать расчётные действия с действиями трейдера;
+- тестировать confirmed rules;
+- проверять path-dependent сценарии;
+- учитывать fees/funding/slippage/partial fills.
 
-Не детализировано на текущем этапе.
+## Phase 3 — Risk Manager
 
-## Recorder не в этом roadmap
+Добавить отдельный слой контроля:
 
-Recorder — уже реализованный, отдельный технический слой (см. [04-platform/recorder-role.md](../04-platform/recorder-role.md)). Его развитие фиксируется отдельно в корневом [`DEVELOPMENT_STATUS.md`](../../DEVELOPMENT_STATUS.md), не здесь.
+- margin/equity;
+- gross/side exposure;
+- allocation limits;
+- risk states;
+- forced/early unloading только после подтверждения правил.
+
+Risk Manager не прогнозирует рынок и не использует внешние indicators/news/sentiment.
+
+## Phase 4 — Controlled Automated Execution
+
+Только отдельным решением после тестирования:
+
+- write-enabled API в отдельном Execution Engine;
+- hard safety limits;
+- emergency controls;
+- постепенный rollout.
+
+## Phase 5 — Additional internal managers/helpers
+
+Детализируется позже.

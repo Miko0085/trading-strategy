@@ -1,27 +1,67 @@
 # Confirmed Rules
 
-**Статус: CONFIRMED** — правила в этом файле явно подтверждены трейдером. Список короткий и намеренно строгий: см. правило в [06-development/decisions.md](../06-development/decisions.md) — никогда не повышать `CANDIDATE` до `CONFIRMED` без явного подтверждения.
+**Статус: CONFIRMED**
 
-## 1. Coin quantity — основная единица объёма
+В этот файл попадают только правила, явно подтверждённые трейдером или владельцем проекта.
 
-Primary size unit = coin quantity, не долларовая маржа. USDT notional, margin и PnL — производные величины. См. [01-strategy/position-accounting.md](../01-strategy/position-accounting.md).
+## 1. Coin quantity — primary size unit
 
-## 2. TP считается от цены исполнения конкретного lot
+Размер Grid Order / Strategy Lot задаётся количеством монет. Dollar notional, margin и PnL — производные показатели.
 
-Partial TP для Strategy Lot считается относительно **actual average execution price этого lot**, а не относительно общей average entry Long/Short, не относительно предыдущего TP и не относительно начальной цены рынка. См. [01-strategy/partial-take-profit.md](../01-strategy/partial-take-profit.md).
+## 2. Grid Orders — Limit Orders
 
-## 3. Close percentage считается от original_qty lot
+Сетка состоит из лимитных заявок.
 
-Процент частичного закрытия (partial TP) считается от `original_qty` конкретного lot, а не от текущего `remaining_qty` на момент срабатывания следующего TP. См. [01-strategy/partial-take-profit.md](../01-strategy/partial-take-profit.md).
+## 3. Следующий Grid Order может считаться от предыдущего limit price
 
-## 4. Никаких внешних сигналов в базовой стратегии
+Цена следующего уровня может рассчитываться от цены предыдущей лимитной заявки, не дожидаясь её фактического исполнения.
 
-Индикаторы, новости, sentiment, AI-прогнозы не используются как вход для решений стратегии. См. [00-overview/principles.md](../00-overview/principles.md) — это project-wide правило.
+Конкретные проценты spacing — configurable examples, не универсальные constants.
 
-## 5. Grid Orders — лимитные ордера с конфигурируемым spacing
+## 4. Каждый Grid Order имеет индивидуальные параметры
 
-Следующий уровень сетки рассчитывается от цены предыдущего лимитного ордера (не от исходной reference price), не дожидаясь его исполнения. Конкретные проценты spacing не фиксированы как правило — только сам механизм расчёта. См. [01-strategy/grid-mechanics.md](../01-strategy/grid-mechanics.md).
+Для разных уровней могут различаться:
 
----
+- spacing;
+- original_qty;
+- TP configuration.
 
-Всё остальное, что напоминает правило, но не подтверждено явно — в [candidate-rules.md](candidate-rules.md).
+## 5. Исполненный Grid Order становится отдельным Strategy Lot
+
+Внутренняя стратегия должна сохранять происхождение исполненного объёма, даже если Bybit агрегирует позицию по стороне.
+
+## 6. TP считается от actual average execution price конкретного lot
+
+Все TP этого lot считаются от его собственной фактической средней цены исполнения.
+
+Не от:
+
+- общей average entry стороны;
+- предыдущего TP;
+- начальной reference price.
+
+## 7. Partial close считается от original_qty lot
+
+Если этап закрывает 25%, это 25% от исходного объёма конкретного Strategy Lot, а не от текущего остатка.
+
+## 8. Long и Short — отдельные сетки
+
+Обе стороны могут работать одновременно в Hedge Mode. Short использует обратную базовую механику, но конкретные параметры стороны и каждого ордера могут отличаться.
+
+## 9. Никаких внешних сигналов
+
+Базовая стратегия не использует:
+
+- technical indicators;
+- news;
+- sentiment;
+- social signals;
+- analyst forecasts;
+- AI price prediction;
+- эмоциональную оценку рынка.
+
+Цена и состояние аккаунта используются как объективные входные переменные математической механики.
+
+## 10. Risk Manager не блокирует разработку базовой механики
+
+Сначала реализуется/формализуется конфигурируемая механика Grid Orders и Strategy Lots. Автоматическое risk decisioning добавляется позже отдельным слоем.

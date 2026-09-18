@@ -1,51 +1,66 @@
-# Текущий алгоритм
+# Текущий базовый алгоритм
 
-**Статус: CONFIRMED (структура flow) — без decision logic**
+**Статус: CONFIRMED BASE MECHANICS / OPEN DECISION LOGIC**
 
-Ниже — только подтверждённая последовательность шагов ручного процесса трейдера. Это **не** исполняемый алгоритм и не содержит формул принятия решений, которые пока не подтверждены (глубина сетки, sizing, TP-уровни и т.д. — см. соответствующие документы в [01-strategy/](../01-strategy/strategy-overview.md) и [05-research/open-questions.md](../05-research/open-questions.md)).
+Этот документ описывает базовую механику, которую уже можно формализовывать технически. Он **не** утверждает, что полностью известна логика выбора параметров.
 
-```
+## Конфигурируемая механика
+
+```text
 START
   ↓
 Select Symbol
   ↓
-Configure Long Grid
+Configure LONG GRID
   ↓
-Configure Short Grid
+Configure SHORT GRID
   ↓
-Define Grid Limit Prices
+For each Grid Order:
+  - define limit price / spacing
+  - define coin quantity
+  - define partial TP steps
   ↓
-Define Coin Qty per Order
+Place / maintain configured Limit Orders
   ↓
-Define TP configuration
+Execution(s) occur
   ↓
-Place/observe Limit Orders
+Aggregate executions of source Grid Order
+into Strategy Lot actual average execution price
   ↓
-Order Executes
+Track Strategy Lot independently
   ↓
-Create Strategy Lot
+Price reaches configured TP level
   ↓
-Track Lot Independently
+Close configured % of original_qty
   ↓
-Price reaches Lot TP
-  ↓
-Close configured coin quantity
-  ↓
-Update remaining_qty
+Update closed_qty / remaining_qty
   ↓
 Continue
 ```
 
-## Что этот flow не определяет
+## Что может быть автоматизировано уже на базовом уровне
 
-- Как именно выбирается qty каждого следующего Grid Order (см. [05-research/open-questions.md](../05-research/open-questions.md), вопрос 1).
-- Формулу spacing по глубине (вопрос 2).
-- Условие/момент перестройки сетки (вопрос 3).
-- Что происходит с remaining_qty после всех запланированных TP (вопрос 5).
-- Наличие обязательного финального TP или Stop Loss (вопросы 6, 7).
+Отдельный механический Execution Engine в будущем может:
 
-## Связанные документы
+- разместить заранее сконфигурированные limit orders;
+- следить за фактическими executions;
+- создать внутренний Strategy Lot;
+- выставить/исполнить заранее заданные partial TP;
+- пересчитать remaining_qty;
+- принять ручное изменение конфигурации трейдера;
+- отменить выбранные неисполненные orders по команде трейдера.
 
-- [order-lifecycle.md](order-lifecycle.md) — состояния одного ордера.
-- [grid-lifecycle.md](grid-lifecycle.md) — состояния сетки целиком.
-- [state-machine.md](state-machine.md) — сводная state machine.
+Это **не autonomous strategy decisioning**: параметры задаёт человек.
+
+## Что алгоритм пока НЕ решает
+
+- какие именно spacing выбрать;
+- какой qty задать следующему ордеру;
+- когда автоматически перестраивать grid;
+- когда автоматически приближать TP;
+- когда принудительно разгружать lot;
+- какие Risk Manager thresholds использовать;
+- нужен ли Stop Loss;
+- как автоматически распределять капитал Long/Short.
+
+Эти вопросы не должны блокировать реализацию самой базовой механики.

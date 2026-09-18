@@ -1,22 +1,48 @@
-# Future Execution Engine
+# Configurable Grid Execution Engine
 
-**Статус: FUTURE** — не реализуется на текущем этапе, не подключается write-enabled Bybit API.
+**Статус: NEXT PLATFORM LAYER / NOT YET IMPLEMENTED**
 
-## Что это будет (концептуально)
+Этот компонент отделён от read-only Strategy Recorder.
 
-Компонент, который в будущем сможет:
+## Назначение
 
-- вести учёт Strategy Lots (см. [01-strategy/position-accounting.md](../01-strategy/position-accounting.md));
-- отслеживать `take_profit_steps[]` для partial TP (см. [01-strategy/partial-take-profit.md](../01-strategy/partial-take-profit.md));
-- поддерживать audit-able редактирование параметров ордеров/lots (before/after/timestamp/reason).
+Execution Engine должен механически исполнять **заранее заданную трейдером конфигурацию**, не пытаясь самостоятельно предсказывать рынок или выбирать стратегические параметры.
 
-## Что явно не делается сейчас
+Он сможет:
 
-- Не реализуется trading execution logic.
-- Не подключается write-enabled Bybit API key.
-- Не размещаются реальные ордера.
-- Не реализуется Risk Manager (см. [03-risk/future-risk-manager.md](../03-risk/future-risk-manager.md)).
+- хранить конфигурацию Long Grid и Short Grid;
+- хранить N Grid Orders на сторону;
+- задавать coin quantity каждого Grid Order;
+- рассчитывать следующий limit price от предыдущего configured limit price;
+- размещать/отменять сконфигурированные limit orders;
+- собирать executions конкретного source order в Strategy Lot;
+- считать actual average execution price lot;
+- хранить original_qty / closed_qty / remaining_qty;
+- поддерживать 0..N partial TP steps;
+- считать TP от entry конкретного Strategy Lot;
+- считать каждый close percentage от original_qty;
+- принимать ручное изменение параметров;
+- вести audit trail изменений.
 
-## Предпосылка для начала работы над этим компонентом
+## Важное изменение roadmap
 
-Начало реализации возможно только после того, как достаточное количество правил в [05-research/candidate-rules.md](../05-research/candidate-rules.md) получит статус `CONFIRMED` в [05-research/confirmed-rules.md](../05-research/confirmed-rules.md), и по отдельному явному решению — см. [06-development/decisions.md](../06-development/decisions.md) и [06-development/roadmap.md](../06-development/roadmap.md) (Phase 2+).
+Для разработки этой **механической** части не требуется ждать полной формализации decision logic стратегии.
+
+Параллельно:
+
+- Recorder продолжает собирать факты и объяснения;
+- Research слой формализует правила;
+- Execution Engine может исполнять явно заданную конфигурацию.
+
+## Что сюда пока НЕ входит
+
+- автоматический выбор spacing;
+- автоматический sizing;
+- прогноз направления рынка;
+- новости/sentiment/technical indicators;
+- автоматическое приближение TP по риску;
+- автоматическое перераспределение Long/Short;
+- Risk Manager;
+- автономная торговая decision logic.
+
+До отдельного решения Recorder остаётся strictly read-only. Write-enabled Bybit доступ должен принадлежать отдельному Execution Engine с собственными safety controls.

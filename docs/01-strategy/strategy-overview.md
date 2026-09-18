@@ -1,29 +1,54 @@
 # Обзор стратегии
 
-**Статус: TRADER EXPLANATION / CANDIDATE**
+**Статус: MIXED — CONFIRMED mechanics + CANDIDATE decision logic**
 
-## Общая картина
+## Что уже подтверждено
 
-Трейдер торгует вручную по системе, использующей:
+Базовая механика стратегии сейчас описывается так:
 
-- Hedge Mode на Bybit — Long и Short одновременно по одному символу (`OBSERVED FACT`, подтверждено на реальных данных UAIUSDT — см. [05-research/trader-observations.md](../05-research/trader-observations.md));
-- сетки лимитных ордеров (Grid Orders) на обеих сторонах;
-- рост объёма ордера глубже по сетке (`CANDIDATE`, качественно наблюдается, формулы нет — см. [grid-mechanics.md](grid-mechanics.md));
-- независимый учёт каждого исполненного уровня как Strategy Lot;
-- частичные фиксации (partial TP) относительно цены входа конкретного lot, а не общей средней позиции;
-- ручную перестройку/добавление ордеров по решению трейдера.
+- стратегия работает с Long и Short в Hedge Mode;
+- Long и Short ведутся как две отдельные сетки по одному инструменту;
+- Grid Orders — лимитные ордера;
+- параметры каждого Grid Order задаются индивидуально и могут отличаться;
+- основной размер ордера задаётся в количестве монет (coin quantity), а не в долларах маржи;
+- цена следующего Grid Order может рассчитываться от limit price предыдущего Grid Order;
+- после фактического исполнения Grid Order его исполненный объём должен учитываться как отдельный Strategy Lot;
+- partial Take Profit конкретного Strategy Lot считается от actual average execution price именно этого lot;
+- каждый partial close считается от original_qty именно этого lot;
+- конкретные проценты spacing, sizing и TP не являются универсальными константами;
+- внешние сигналы, новости, sentiment и технические индикаторы не используются.
 
-## Компоненты
+## Что ещё НЕ формализовано
 
-| Документ | Что описывает |
-|---|---|
-| [long-short-model.md](long-short-model.md) | Как устроены Long/Short как две независимые сетки |
-| [grid-mechanics.md](grid-mechanics.md) | Как выставляются уровни сетки и их объём |
-| [order-model.md](order-model.md) | Правила именования/учёта ордера как объекта |
-| [partial-take-profit.md](partial-take-profit.md) | Как считается частичный TP и от чего |
-| [position-accounting.md](position-accounting.md) | Coin quantity, Strategy Lot vs Bybit-агрегация |
-| [examples.md](examples.md) | Реальные примеры по UAIUSDT с ID ордеров |
+Пока нет подтверждённой универсальной формулы для:
 
-## Что подтверждено, а что нет
+- количества монет следующего Grid Order;
+- изменения spacing по глубине сетки;
+- количества Grid Orders;
+- автоматической перестройки сетки;
+- автоматического приближения TP;
+- Stop Loss;
+- распределения капитала Long/Short;
+- combined break-even;
+- Risk Manager thresholds.
 
-Ничего из перечисленного выше не имеет статуса `CONFIRMED` как точная формула, кроме одного явно подтверждённого правила про TP (см. [partial-take-profit.md](partial-take-profit.md)). Полный список подтверждённых и неподтверждённых пунктов — в [05-research/confirmed-rules.md](../05-research/confirmed-rules.md) и [05-research/candidate-rules.md](../05-research/candidate-rules.md).
+## Важное архитектурное уточнение
+
+Для реализации базовой механики **не требуется ждать полной формализации всей стратегии**.
+
+Можно параллельно развивать два слоя:
+
+1. **Strategy Recorder / Research** — наблюдает реальную торговлю и помогает формализовать decision logic.
+2. **Manual-configured Grid Execution Engine** — механически исполняет заранее заданные трейдером параметры Grid Orders и partial TP, не решая самостоятельно, почему выбраны именно эти параметры.
+
+Автоматическое принятие стратегических решений и Risk Manager остаются более поздними фазами.
+
+## Связанные документы
+
+- [Long / Short](long-short-model.md)
+- [Grid Mechanics](grid-mechanics.md)
+- [Order Model](order-model.md)
+- [Partial Take Profit](partial-take-profit.md)
+- [Position Accounting](position-accounting.md)
+- [Confirmed Rules](../05-research/confirmed-rules.md)
+- [Open Questions](../05-research/open-questions.md)
