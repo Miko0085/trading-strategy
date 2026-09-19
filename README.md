@@ -1,10 +1,16 @@
 # Bybit Strategy Recorder
 
-Read-only recorder for documenting a manually traded Bybit V5 account. It observes market and account state, keeps raw messages, normalizes them into SQLite, and later exports an analytical dataset. It is not a trading bot and contains no order placement, amendment, cancellation, leverage, TP/SL, closing, grid, hedging, or execution engine. The project is not an autonomous bot at any stage, and the strategy documented here uses no external market indicators, news, or sentiment as decision inputs.
+Read-only Recorder для записи ручной торговли на Bybit V5. Он фиксирует состояние рынка и счёта, сохраняет сырые события, нормализует данные в SQLite и формирует аналитический набор данных.
 
-Strategy and platform documentation (grid mechanics, Strategy Lots, confirmed/candidate rules, roadmap) lives in **[`docs/`](docs/README.md)** — a separate, GitBook-published knowledge layer, distinct from this Recorder code. Current phase: **Base Strategy Mechanics** (see [`docs/06-development/roadmap.md`](docs/06-development/roadmap.md)).
+**Recorder навсегда остаётся read-only и не размещает, не изменяет и не отменяет ордера.**
 
-## Install
+Отдельный **Execution Engine** может разрабатываться параллельно как самостоятельный компонент для механического исполнения заранее заданных трейдером параметров. Он не является частью Recorder.
+
+Каноническая документация стратегии и платформы находится в **[`docs/`](docs/README.md)** и публикуется через GitBook.
+
+Основной язык документации — **русский**. Технические названия полей, API и сущностей кода могут оставаться на английском, но пользовательские объяснения должны быть понятны русскоязычному трейдеру.
+
+## Установка
 
 ```bash
 python3.12 -m venv .venv
