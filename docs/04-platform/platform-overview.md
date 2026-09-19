@@ -1,124 +1,89 @@
-# Platform Overview
+# Архитектура платформы
 
-**Статус: OBSERVED FACT (Recorder) / NEXT PLATFORM LAYER (Execution Engine) / FUTURE (Risk Manager)**
-
-Платформа разделена на независимые слои:
+**Статус: RECORDER УЖЕ РЕАЛИЗОВАН / EXECUTION ENGINE — СЛЕДУЮЩИЙ СЛОЙ / RISK MANAGER — БУДУЩЕЕ**
 
 ```text
-┌────────────────────────────────────────────┐
-│ Strategy / Platform Documentation          │
-│ docs/                                      │
-├────────────────────────────────────────────┤
-│ Configurable Grid Execution Engine         │
-│ NEXT PLATFORM LAYER                        │
-│ mechanical execution of trader config      │
-├────────────────────────────────────────────┤
-│ Future Risk Manager                        │
-│ FUTURE independent layer                   │
-├────────────────────────────────────────────┤
-│ Bybit Strategy Recorder                    │
-│ EXISTS / PERMANENTLY READ-ONLY             │
-│ src/recorder/                               │
-├────────────────────────────────────────────┤
-│ Bybit V5                                   │
-└────────────────────────────────────────────┘
+Документация стратегии
+        ↓
+Execution Engine
+(механически исполняет настройки трейдера)
+        ↓
+Bybit
+
+Параллельно:
+
+Bybit
+  ↓
+Recorder
+(только чтение, фиксация фактов)
+  ↓
+Исследование стратегии
 ```
 
-## 1. Strategy Recorder
+## 1. Recorder
 
-Recorder уже существует и остаётся **permanently read-only**.
+Recorder уже существует и **навсегда остаётся read-only**.
 
 Он отвечает за:
-
-- raw Bybit events;
-- orders / executions / positions / wallet;
-- market context;
-- reconciliation;
-- trader notes / voice;
+- события Bybit;
+- ордера;
+- исполнения;
+- позиции;
+- кошелёк;
+- рыночный контекст;
+- сверку;
+- заметки и голос трейдера;
 - timeline;
-- dataset export;
-- machine truth.
+- экспорт данных.
 
-Recorder никогда не должен размещать, изменять или отменять реальные ордера.
+Recorder никогда не размещает и не изменяет реальные ордера.
 
-## 2. Configurable Grid Execution Engine
+## 2. Execution Engine
 
-Execution Engine — **отдельный компонент**, который разрешено разрабатывать параллельно с исследованием стратегии.
+Execution Engine — отдельный компонент, который можно разрабатывать параллельно с исследованием стратегии.
 
-Его задача — механически исполнять уже заданную трейдером конфигурацию:
-
+Он выполняет заранее заданную конфигурацию:
 - Long Grid / Short Grid;
-- N configurable Grid Orders;
-- coin quantity per order;
-- Strategy Lot accounting;
-- partial TP steps;
-- manual amend/cancel;
-- audit trail.
+- N ордеров сетки;
+- количество монет на каждом уровне;
+- Strategy Lot;
+- частичные Take Profit;
+- ручное редактирование;
+- история изменений.
 
-Он не обязан ждать полной формализации причины выбора spacing/qty/TP.
-
-Но он не должен сам придумывать эти параметры.
-
-Подробнее: [future-execution-engine.md](future-execution-engine.md).
+Он не должен самостоятельно придумывать параметры стратегии.
 
 ## 3. Risk Manager
 
-Risk Manager — отдельный будущий слой.
+Будущий отдельный слой контроля капитала, маржи и экспозиции.
 
-Он будет контролировать:
-
-- margin;
-- equity;
-- exposure;
-- allocation limits;
-- risk states;
-- emergency actions.
-
-Он не прогнозирует рынок и не использует новости, sentiment или technical indicators.
-
-## 4. Жёсткая граница компонентов
+## 4. Разделение ответственности
 
 ```text
 Recorder
-  READ ONLY
-  ↓
-observes reality
+→ наблюдает и записывает
 
 Execution Engine
-  WRITE CAPABLE
-  ↓
-executes explicit configuration
+→ исполняет явно заданные настройки
 
 Risk Manager
-  FUTURE
-  ↓
-may allow/deny/modify actions by confirmed risk rules
+→ в будущем разрешает/ограничивает действия по подтверждённым правилам
 ```
 
-API keys, runtime responsibilities и safety boundaries у Recorder и Execution Engine должны быть раздельными.
+API-ключи и права доступа Recorder и Execution Engine должны быть раздельными.
 
-## 5. Documentation layer
+## 5. Ручное вмешательство через Bybit
 
-`docs/` хранит canonical knowledge:
+Если фактическое состояние Bybit отличается от ожидаемого состояния платформы:
 
-- confirmed mechanics;
-- candidate rules;
-- open questions;
-- architecture decisions;
-- roadmap.
+1. система обнаруживает расхождение;
+2. уведомляет трейдера;
+3. ничего не перестраивает самостоятельно;
+4. ждёт подтверждения.
 
-Документация не является runtime-компонентом и не должна содержать приватные account dumps/API secrets.
+После подтверждения возможны два режима:
 
+- **Принять внешнее изменение (Adopt external state)** — признать ручное изменение новым фактическим состоянием и скорректировать конфигурацию платформы.
+- **Восстановить состояние платформы (Restore platform state)** — вернуть последнюю подтверждённую конфигурацию там, где это не требует нового самостоятельного торгового решения.
 
-## 6. External intervention reconciliation
-
-Если фактическое состояние Bybit отличается от состояния, ожидаемого по последней конфигурации платформы, это считается external intervention / state divergence.
-
-Execution Engine не адаптирует стратегию самостоятельно.
-
-Допустимы только два подтверждённых трейдером действия:
-
-1. Adopt external state — принять ручное изменение как новое фактическое состояние и вручную обновить конфигурацию платформы.
-2. Restore platform state — восстановить последнюю подтверждённую конфигурацию платформы из revision history там, где это технически возможно без создания нового самостоятельного торгового решения.
-
-Любое уже совершившееся execution/manual close остаётся machine truth и не «откатывается». Recorder при этом продолжает независимо фиксировать фактические события Bybit.
+Уже произошедшее исполнение или ручное закрытие остаётся фактом и не «откатывается».
