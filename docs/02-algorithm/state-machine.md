@@ -1,30 +1,72 @@
-# State Machine (сводная)
+# Автоматы состояний
 
-**Статус: CANDIDATE / FUTURE** — черновая схема для будущей формализации, не текущая работающая система.
+Чтобы не смешивать состояние заявки, состояние набранного объёма и состояние Take Profit, используются отдельные автоматы состояний.
 
-## Уровень ордера
+## 1. Состояние ордера сетки (GridOrderState)
 
-```
-PLACED → (FILLED | PARTIALLY_FILLED | CANCELLED | REJECTED)
-```
-
-## Уровень Strategy Lot (FUTURE, ещё не реализовано)
-
-```
-CREATED (при execution) 
-  → OPEN (remaining_qty == original_qty)
-  → PARTIALLY_CLOSED (0 < remaining_qty < original_qty)
-  → CLOSED (remaining_qty == 0)
+```text
+НАСТРОЕН (CONFIGURED)
+↓
+ВЫСТАВЛЕН (PLACED)
+↓
+ЧАСТИЧНО ИСПОЛНЕН (PARTIALLY_FILLED)
+↓
+ПОЛНОСТЬЮ ИСПОЛНЕН (FILLED)
 ```
 
-Переходы `OPEN → PARTIALLY_CLOSED → CLOSED` управляются срабатыванием `take_profit_steps[]` (см. [01-strategy/partial-take-profit.md](../01-strategy/partial-take-profit.md)). Ни разу не наблюдался переход через `PARTIALLY_CLOSED` в реальных данных — единственное известное закрытие было прямым `OPEN → CLOSED`.
+Дополнительные конечные состояния:
 
-## Уровень Grid (LONG GRID / SHORT GRID)
-
-```
-CONFIGURED → ACTIVE (есть хотя бы один открытый Grid Order или Lot)
-  → RESTRUCTURING (гипотетически, триггер не подтверждён)
-  → EMPTY (все lots закрыты, все ордера отменены/исполнены)
+```text
+ОТМЕНЁН (CANCELLED)
+ОТКЛОНЁН (REJECTED)
 ```
 
-`RESTRUCTURING` — гипотетическое состояние, добавлено для полноты диаграммы, не подтверждено как формальный шаг. См. [05-research/open-questions.md](../05-research/open-questions.md).
+Важно: `PARTIALLY_FILLED` остаётся состоянием **того же самого Grid Order**.
+
+## 2. Состояние Strategy Lot
+
+Strategy Lot появляется только после полного исполнения заданного объёма Grid Order.
+
+```text
+АКТИВЕН (ACTIVE)
+↓
+ЧАСТИЧНО ЗАКРЫТ (PARTIALLY_CLOSED)
+↓
+ЗАКРЫТ (CLOSED)
+```
+
+Если ордер ещё не набрал полный `configured_qty`, полноценный Strategy Lot пока не создаётся.
+
+## 3. Состояние этапа Take Profit (TPStepState)
+
+Базовая модель:
+
+```text
+ОЖИДАЕТ (PENDING)
+↓
+АКТИВИРОВАН (ARMED)
+↓
+ВЫСТАВЛЕН / ОТПРАВЛЕН (PLACED)
+↓
+ИСПОЛНЕН (FILLED)
+```
+
+Возможны также:
+- ИЗМЕНЁН (MODIFIED);
+- ОТМЕНЁН (CANCELLED);
+- ЧАСТИЧНО ИСПОЛНЕН (PARTIALLY_FILLED), если это возможно по фактическому исполнению биржевой заявки.
+
+Точный технический способ выставления TP на Bybit пока ещё уточняется.
+
+## 4. Оркестратор жизненного цикла сетки (Grid Lifecycle Orchestrator)
+
+Верхний уровень связывает три автомата:
+
+```text
+Grid
+├── GridOrderState
+├── StrategyLotState
+└── TPStepState
+```
+
+Он не придумывает торговые решения. Его задача — синхронизировать уже заданную конфигурацию с фактическим состоянием Bybit.
