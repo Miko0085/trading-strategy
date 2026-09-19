@@ -21,11 +21,12 @@
 
 ## Алгоритм
 
-* [Текущий базовый алгоритм](02-algorithm/current-algorithm.md)
+* [Базовый алгоритм исполнения сетки](02-algorithm/current-algorithm.md)
+* [Активное окно ордеров](02-algorithm/active-order-window.md)
 * [Алгоритм реструктуризации сетки](02-algorithm/restructuring-algorithm.md)
-* [Жизненный цикл ордера](02-algorithm/order-lifecycle.md)
-* [Жизненный цикл сетки](02-algorithm/grid-lifecycle.md)
-* [Автоматы состояний](02-algorithm/state-machine.md)
+* [Жизненные циклы ордеров](02-algorithm/order-lifecycle.md)
+* [Жизненный цикл Grid](02-algorithm/grid-lifecycle.md)
+* [Автоматы состояний и оркестратор](02-algorithm/state-machine.md)
 
 ## Риски
 
@@ -44,6 +45,7 @@
 ## Исследование стратегии
 
 * [Наблюдения трейдера](05-research/trader-observations.md)
+* [Наблюдения по реструктуризации](05-research/restructuring-observations.md)
 * [Гипотезы и возможные правила](05-research/candidate-rules.md)
 * [Подтверждённые правила](05-research/confirmed-rules.md)
 * [Открытые вопросы](05-research/open-questions.md)
