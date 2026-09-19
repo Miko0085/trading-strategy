@@ -1,58 +1,103 @@
 # Модель данных
 
-**Статус: RECORDER УЖЕ РЕАЛИЗОВАН / EXECUTION ENGINE — ПРОЕКТИРУЕТСЯ ОТДЕЛЬНО**
+**Статус: RECORDER РЕАЛИЗОВАН / STRATEGY И EXECUTION MODEL ПРОЕКТИРУЮТСЯ**
 
-## Хранилища Recorder
+## 1. Recorder — фактическая реальность
 
-| Слой | Назначение |
-|---|---|
-| JSONL (`data/raw/`) | Сырые сообщения Bybit, append-only |
-| SQLite WAL (`data/db/`) | Нормализованное рабочее хранилище |
-| Parquet (`data/exports/`) | Аналитический экспорт |
+Recorder хранит machine truth:
+- orders;
+- executions;
+- positions;
+- closed_pnl;
+- funding;
+- current_states;
+- observations;
+- timeline;
+- trader_notes;
+- tracked_instruments.
 
-## Основные сущности Recorder
+## 2. Strategy Intent Model — что хотели сделать
 
-- `orders` — биржевые заявки;
-- `executions` — фактические исполнения;
-- `positions` — состояния позиций;
-- `closed_pnl` — закрытый PnL;
-- `funding` — funding;
-- `current_states` — последнее наблюдаемое состояние;
-- `observations` — версии состояний и контекст;
-- `timeline` — временная шкала событий;
-- `trader_notes` / `trader_note_links` — пояснения трейдера и связи с событиями;
-- `tracked_instruments` — отслеживаемые инструменты.
+Будущие сущности:
 
-## Семантические ограничения
+### Grid
+Долгоживущая Long или Short сетка.
 
-- последнее наблюдаемое состояние не гарантирует, что биржа прямо сейчас не изменилась;
-- изменение Mark Price или uPnL без изменения позиции не считается действием трейдера;
-- денежные значения хранятся точно, без ненужного преобразования в float;
-- отсутствующее значение не заменяется выдуманным нулём.
+### GridRevision
+Immutable-версия параметров Grid.
 
-## Будущая модель Execution Engine
+### GridOrderConfig
+Логическая настройка конкретного уровня.
 
-Execution Engine должен отдельно хранить как минимум:
+### TPStepConfig
+Намерение по разгрузке конкретного исполненного объёма.
 
-- Grid;
-- Grid Revision;
-- GridOrderConfig;
-- Exchange Order;
-- Execution;
-- Strategy Lot;
-- TP Step;
-- историю изменений.
+### RestructuringPlan
+Предложение Decision Layer о том, как изменить текущую Grid. Оно ещё не означает, что действия разрешены и исполнены.
 
-Ключевой принцип:
+## 3. Risk Decision Model
 
 ```text
-Намерение трейдера
-→ конфигурация
-→ биржевая заявка
-→ фактическое исполнение
-→ Strategy Lot
-→ закрытия
-→ результат
+RiskDecision
+- source_plan_id
+- decision: ALLOW | MODIFY | DENY
+- reasons
+- modified_limits?
+- created_at
 ```
 
-Эта модель не должна смешиваться с агрегированной средней позицией Bybit.
+Точная схема будет определена позже.
+
+## 4. Execution Model — что отправили на биржу
+
+### ApprovedExecutionPlan
+Утверждённый набор команд после Risk Manager.
+
+### ExecutionCommand
+Отдельная идемпотентная команда: PLACE / AMEND / CANCEL / разрешённый CLOSE.
+
+### ExchangeOrder
+Реальный order на Bybit.
+
+### Execution / Fill
+Фактическое исполнение.
+
+## 5. Position Attribution Model
+
+### StrategyLot / Filled Allocation
+
+Появляется после первого фактического fill конкретного Grid Order и хранит:
+- source GridOrderConfig;
+- linked ExchangeOrders;
+- executions;
+- configured_qty;
+- filled_qty;
+- actual average entry;
+- open_qty;
+- closed_qty;
+- realized PnL;
+- TP state.
+
+### RestructuringEvent
+Audit/research факт реструктуризации и её результата.
+
+## Главная цепочка
+
+```text
+INTENT
+GridRevision / GridOrderConfig / RestructuringPlan
+        ↓
+RISK DECISION
+ALLOW / MODIFY / DENY
+        ↓
+EXECUTION INTENT
+ApprovedExecutionPlan / ExecutionCommand
+        ↓
+EXCHANGE REALITY
+ExchangeOrder / Execution
+        ↓
+ATTRIBUTED RESULT
+StrategyLot / PnL / Account State
+```
+
+Эти уровни нельзя схлопывать в одну таблицу или одну сущность.
