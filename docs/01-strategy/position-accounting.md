@@ -1,53 +1,44 @@
-# Position Accounting
+# Учёт позиции и Strategy Lot
 
-**Статус: CONFIRMED (единица объёма) / FUTURE (lot-модель)**
+## Основная единица объёма
 
-## CONFIRMED RULE — единица объёма
+Основная единица размера — **количество монет**.
 
-**PRIMARY SIZE UNIT = COIN QUANTITY.**
+### Заданный объём (`configured_qty`)
 
-Долларовая маржа не используется как primary size.
+Полный объём монет, который трейдер указал для конкретного Grid Order.
 
-### Пример
+### Исполненный объём (`filled_qty`)
 
-```
-Order #1
-original_qty = 1000 LSK
+Сколько из заданного объёма уже реально исполнила биржа.
 
-TP: close 25%
-→ close_qty = 250 LSK
-```
+### Оставшийся объём (`remaining_qty`)
 
-Производные величины (считаются из coin quantity, не наоборот):
+Сколько монет в Strategy Lot ещё не закрыто.
 
-- USDT notional;
-- margin;
-- PnL.
+### Закрытый объём (`closed_qty`)
 
-## Strategy Lot vs Bybit position
+Сколько монет из Strategy Lot уже закрыто.
 
-Bybit агрегирует все исполнения по символу/стороне в одну Long или одну Short позицию (одна average price, один size). Внутренняя логика стратегии должна сохранять **отдельные Strategy Lots**:
+USDT notional, margin и PnL — производные показатели.
 
-```
-LONG POSITION (Bybit: один агрегат)
+## Почему нужен отдельный Strategy Lot
 
-  Lot #1
-    source_order
-    actual_average_execution_price
-    original_qty
-    remaining_qty
-    closed_qty
-    TP configuration
+Bybit показывает агрегированную Long- или Short-позицию по инструменту. Но стратегия должна помнить происхождение каждого полностью исполненного уровня сетки.
 
-  Lot #2
-    ...
+```text
+LONG POSITION — агрегат Bybit
 
-  Lot #N
-    ...
+Strategy Lot #1
+- источник: Grid Order #1
+- фактическая средняя цена исполнения
+- configured_qty
+- remaining_qty
+- closed_qty
+- собственные TP Steps
+
+Strategy Lot #2
+...
 ```
 
-Средняя цена всей позиции по Bybit **не заменяет** цену конкретного lot — TP считается от цены lot (см. [partial-take-profit.md](partial-take-profit.md)).
-
-## Статус реализации
-
-Lot-модель — `FUTURE`: сейчас Recorder хранит только то, что видит на бирже (агрегированную позицию, ордера, исполнения) — см. [04-platform/data-model.md](../04-platform/data-model.md). Отдельного хранилища Strategy Lot в системе пока нет; это требование к будущей platform-логике, не к Recorder'у.
+Средняя цена всей позиции Bybit не заменяет цену конкретного Strategy Lot.
