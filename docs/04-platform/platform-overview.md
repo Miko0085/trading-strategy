@@ -1,89 +1,103 @@
 # Архитектура платформы
 
-**Статус: RECORDER УЖЕ РЕАЛИЗОВАН / EXECUTION ENGINE — СЛЕДУЮЩИЙ СЛОЙ / RISK MANAGER — БУДУЩЕЕ**
+**Статус: RECORDER РЕАЛИЗОВАН / EXECUTION CORE ПРОЕКТИРУЕТСЯ / DECISION И RISK LAYERS ФОРМАЛИЗУЮТСЯ**
+
+## Основной поток
 
 ```text
-Документация стратегии
-        ↓
-Execution Engine
-(механически исполняет настройки трейдера)
-        ↓
-Bybit
-
-Параллельно:
-
-Bybit
-  ↓
-Recorder
-(только чтение, фиксация фактов)
-  ↓
-Исследование стратегии
+Trader Configuration / Confirmed Strategy Rules
+                    ↓
+             Decision Layer
+        ┌───────────┴───────────┐
+        ↓                       ↓
+Base Grid Planner      Restructuring Planner
+                                ↓
+                         RestructuringPlan
+                                ↓
+                           Risk Manager
+                      ALLOW / MODIFY / DENY
+                                ↓
+                     Approved Execution Plan
+                                ↓
+                         Execution Engine
+                                ↓
+                              Bybit
 ```
 
-## 1. Recorder
+Параллельно и независимо:
 
-Recorder уже существует и **навсегда остаётся read-only**.
+```text
+Bybit
+ ↓
+Recorder
+ ↓
+Research / Reconciliation / Dataset
+```
 
-Он отвечает за:
-- события Bybit;
-- ордера;
-- исполнения;
-- позиции;
-- кошелёк;
-- рыночный контекст;
-- сверку;
-- заметки и голос трейдера;
-- timeline;
-- экспорт данных.
+## 1. Strategy / Configuration Layer
 
-Recorder никогда не размещает и не изменяет реальные ордера.
+Содержит подтверждённые правила и параметры, заданные трейдером. Прямого write-path к Bybit у него нет.
 
-## 2. Execution Engine
+## 2. Decision Layer
 
-Execution Engine — отдельный компонент, который можно разрабатывать параллельно с исследованием стратегии.
+### Base Grid Planner
+Строит механический план текущей Grid Revision: уровни, qty, active order window и TP configuration.
 
-Он выполняет заранее заданную конфигурацию:
-- Long Grid / Short Grid;
-- N ордеров сетки;
-- количество монет на каждом уровне;
-- Strategy Lot;
-- частичные Take Profit;
-- ручное редактирование;
-- история изменений.
-
-Он не должен самостоятельно придумывать параметры стратегии.
+### Restructuring Planner
+Формирует новый RestructuringPlan. Он не отправляет ордера напрямую.
 
 ## 3. Risk Manager
 
-Будущий отдельный слой контроля капитала, маржи и экспозиции.
+Независимый safety/decision gate. Возвращает ALLOW / MODIFY / DENY.
 
-## 4. Разделение ответственности
+## 4. Execution Engine
+
+Execution Engine должен быть максимально детерминированным.
+
+Он:
+- получает уже утверждённый план;
+- валидирует биржевые ограничения;
+- создаёт/amend/cancel ExchangeOrders;
+- синхронизирует TP;
+- поддерживает idempotency;
+- ведёт command audit;
+- делает reconciliation ожидаемого и фактического состояния.
+
+Он не должен:
+- придумывать sizing;
+- решать, когда реструктурировать Grid;
+- менять capital allocation;
+- принимать risk decisions.
+
+## 5. Recorder
+
+Recorder навсегда остаётся read-only и фиксирует фактическую реальность Bybit независимо от decision layer.
+
+## 6. Ручное вмешательство через Bybit
 
 ```text
-Recorder
-→ наблюдает и записывает
-
-Execution Engine
-→ исполняет явно заданные настройки
-
-Risk Manager
-→ в будущем разрешает/ограничивает действия по подтверждённым правилам
+Expected Platform State
+≠
+Actual Bybit State
+↓
+Notify Trader
+↓
+Require Confirmation
+↓
+Adopt external state
+OR
+Restore platform state where technically safe
 ```
 
-API-ключи и права доступа Recorder и Execution Engine должны быть раздельными.
+Уже произошедшие executions не компенсируются автоматически.
 
-## 5. Ручное вмешательство через Bybit
+## Жёсткие границы
 
-Если фактическое состояние Bybit отличается от ожидаемого состояния платформы:
+```text
+Decision Layer = что хотим сделать
+Risk Manager   = можно ли это делать
+Execution      = как безопасно исполнить
+Recorder       = что реально произошло
+```
 
-1. система обнаруживает расхождение;
-2. уведомляет трейдера;
-3. ничего не перестраивает самостоятельно;
-4. ждёт подтверждения.
-
-После подтверждения возможны два режима:
-
-- **Принять внешнее изменение (Adopt external state)** — признать ручное изменение новым фактическим состоянием и скорректировать конфигурацию платформы.
-- **Восстановить состояние платформы (Restore platform state)** — вернуть последнюю подтверждённую конфигурацию там, где это не требует нового самостоятельного торгового решения.
-
-Уже произошедшее исполнение или ручное закрытие остаётся фактом и не «откатывается».
+Эти ответственности нельзя объединять в один модуль.
