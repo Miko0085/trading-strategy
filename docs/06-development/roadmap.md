@@ -1,66 +1,57 @@
-# Roadmap
+# План разработки
 
 ## Основной принцип
 
-> Сначала фиксируем реальную механику. Потом подтверждаем неизвестные decision rules. Механическое исполнение заранее заданной конфигурации может развиваться параллельно с исследованием. Автономные решения и Risk Manager — только после формализации и тестирования.
+Recorder продолжает фиксировать реальность. Параллельно можно разрабатывать механический Execution Engine. Автономные решения и Risk Manager появляются только после формализации и тестирования.
 
-## Phase 1A — Strategy Capture / Recorder
+## Этап 1A — Recorder и исследование стратегии
 
-Продолжать:
-
-- записывать Bybit machine truth;
-- сохранять trader explanations;
+- записывать фактические события Bybit;
+- сохранять объяснения трейдера;
 - связывать действия и контекст;
-- выявлять candidate rules;
-- подтверждать/опровергать гипотезы.
+- выявлять гипотезы;
+- подтверждать или опровергать правила.
 
 Recorder остаётся read-only.
 
-## Phase 1B — Base Strategy Mechanics
-
-Формализовать и затем технически реализовать отдельно от Recorder:
+## Этап 1B — Базовая механика Execution Engine
 
 - Long Grid / Short Grid;
-- configurable N Grid Orders;
-- limit price chain;
-- coin quantity per order;
-- Strategy Lot accounting;
-- partial TP steps;
-- remaining_qty;
-- ручное редактирование/отмена конфигурации;
-- audit trail.
+- настраиваемое количество Grid Orders;
+- Mark Price и цепочка лимитных уровней;
+- `configured_qty` для каждого ордера;
+- учёт Strategy Lot;
+- TP Steps;
+- `remaining_qty` / `closed_qty`;
+- редактирование через интерфейс;
+- полная история Grid Revision;
+- сверка ожидаемого состояния с Bybit.
 
-Эта фаза **не обязана ждать полной формализации decision logic**, потому что параметры задаёт трейдер.
+Эта фаза может идти параллельно с исследованием стратегии.
 
-## Phase 2 — Shadow / Simulation / Testing
+## Этап 2 — Shadow / Simulation / Testing
 
 - воспроизводить механику без реального риска;
 - сравнивать расчётные действия с действиями трейдера;
-- тестировать confirmed rules;
-- проверять path-dependent сценарии;
-- учитывать fees/funding/slippage/partial fills.
+- тестировать подтверждённые правила;
+- учитывать комиссии, funding, slippage и partial fills.
 
-## Phase 3 — Risk Manager
-
-Добавить отдельный слой контроля:
+## Этап 3 — Risk Manager
 
 - margin/equity;
-- gross/side exposure;
+- Long/Short exposure;
 - allocation limits;
 - risk states;
-- forced/early unloading только после подтверждения правил.
+- ранняя/принудительная разгрузка только по подтверждённым правилам.
 
-Risk Manager не прогнозирует рынок и не использует внешние indicators/news/sentiment.
+## Этап 4 — Контролируемое автоматическое исполнение
 
-## Phase 4 — Controlled Automated Execution
-
-Только отдельным решением после тестирования:
-
-- write-enabled API в отдельном Execution Engine;
+Только после отдельного решения:
+- write-enabled API для Execution Engine;
 - hard safety limits;
 - emergency controls;
-- постепенный rollout.
+- постепенный запуск.
 
-## Phase 5 — Additional internal managers/helpers
+## Этап 5 — Дополнительные внутренние модули
 
 Детализируется позже.
