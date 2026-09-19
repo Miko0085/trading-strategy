@@ -2,56 +2,95 @@
 
 ## Основной принцип
 
-Recorder продолжает фиксировать реальность. Параллельно можно разрабатывать механический Execution Engine. Автономные решения и Risk Manager появляются только после формализации и тестирования.
+Исследование стратегии, доменная модель и механический execution могут развиваться параллельно, но autonomous decisions нельзя реализовывать раньше подтверждения правил.
 
-## Этап 1A — Recorder и исследование стратегии
+## Этап 1A — Recorder / Strategy Capture
 
-- записывать фактические события Bybit;
-- сохранять объяснения трейдера;
-- связывать действия и контекст;
-- выявлять гипотезы;
-- подтверждать или опровергать правила.
+- machine truth Bybit;
+- trader explanations;
+- timeline;
+- связь intent и фактических событий;
+- restructuring observations;
+- выявление и подтверждение правил.
 
-Recorder остаётся read-only.
+Recorder остаётся permanently read-only.
 
-## Этап 1B — Базовая механика Execution Engine
+## Этап 1B — Domain Model + Base Grid Mechanics
 
-- Long Grid / Short Grid;
-- настраиваемое количество Grid Orders;
-- Mark Price и цепочка лимитных уровней;
-- `configured_qty` для каждого ордера;
-- учёт Strategy Lot;
-- TP Steps;
-- `remaining_qty` / `closed_qty`;
-- редактирование через интерфейс;
-- полная история Grid Revision;
-- сверка ожидаемого состояния с Bybit.
+Формализовать:
+- Grid;
+- GridRevision;
+- GridOrderConfig;
+- ExchangeOrder;
+- Execution;
+- StrategyLot;
+- TPStep;
+- Active Order Window;
+- lifecycle/state machines;
+- partial fill semantics;
+- TP mechanics.
 
-Эта фаза может идти параллельно с исследованием стратегии.
+Без real write execution.
 
-## Этап 2 — Shadow / Simulation / Testing
+## Этап 1C — Execution Engine Core
 
-- воспроизводить механику без реального риска;
-- сравнивать расчётные действия с действиями трейдера;
-- тестировать подтверждённые правила;
-- учитывать комиссии, funding, slippage и partial fills.
+Сделать детерминированный исполнительный слой:
+- ApprovedExecutionPlan;
+- ExecutionCommand;
+- Bybit validation;
+- idempotency;
+- audit;
+- reconciliation;
+- restart recovery;
+- paper/shadow mode.
+
+## Этап 1D — Restructuring Research
+
+Параллельно:
+- capture ручных реструктуризаций;
+- Capital Recalculation;
+- Volume Recovery;
+- Grid Restructuring;
+- compound logic;
+- allocation;
+- триггеры rebase;
+- RestructuringPlan.
+
+На этом этапе правила исследуются, но не исполняются автономно.
+
+## Этап 2 — Simulation / Shadow / Testnet
+
+- воспроизводить Base Grid;
+- проигрывать RestructuringPlan без реального риска;
+- сравнивать решения с трейдером;
+- учитывать fees/funding/slippage/partial fills;
+- проверять restart/reconciliation.
 
 ## Этап 3 — Risk Manager
 
-- margin/equity;
-- Long/Short exposure;
-- allocation limits;
-- risk states;
-- ранняя/принудительная разгрузка только по подтверждённым правилам.
+Реализовать отдельный gate:
+- ALLOW;
+- MODIFY;
+- DENY;
+- capital/margin/exposure limits;
+- margin reserve;
+- safety states.
 
-## Этап 4 — Контролируемое автоматическое исполнение
+## Этап 4 — Controlled Real Execution
 
-Только после отдельного решения:
-- write-enabled API для Execution Engine;
-- hard safety limits;
+Только отдельным решением:
+- production write-enabled key;
+- hard limits;
 - emergency controls;
-- постепенный запуск.
+- ограниченный rollout;
+- обязательный audit/reconciliation.
 
-## Этап 5 — Дополнительные внутренние модули
+## Этап 5 — Controlled Autonomous Strategy Decisions
 
-Детализируется позже.
+Только после подтверждения и тестирования:
+- автоматические restructuring triggers;
+- automatic capital recalculation;
+- volume recovery rules;
+- automatic Grid revisions.
+
+Неизвестные правила нельзя заполнять предположениями.
