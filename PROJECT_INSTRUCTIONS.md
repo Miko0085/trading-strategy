@@ -1,4 +1,4 @@
-# BYBIT STRATEGY RECORDER — PROJECT INSTRUCTIONS
+# ИНСТРУКЦИИ ПРОЕКТА — BYBIT STRATEGY RECORDER
 
 > Перед изменением логики стратегии/платформы сначала прочитайте `docs/README.md` и:
 > `docs/00-overview/principles.md`, `docs/01-strategy/strategy-overview.md`, `docs/02-algorithm/current-algorithm.md`, `docs/05-research/confirmed-rules.md`, `docs/05-research/open-questions.md`, `docs/06-development/decisions.md`.
@@ -438,7 +438,7 @@ MVP рассчитан примерно на одного трейдера, од
 
 Важно: шаг 2 может развиваться параллельно с шагами 1 и 3, потому что он не обязан самостоятельно принимать стратегические решения.
 
-## 20. Definition of Success
+## 20. Критерий успешности
 
 Текущий этап успешен, если после 1–2 недель ручной торговли можно точно восстановить:
 - что происходило на рынке;
