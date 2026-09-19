@@ -99,6 +99,17 @@
 
 ---
 
+
+---
+
+**Date:** 2026-09-19  
+**Decision:** External manual changes in Bybit require trader confirmation before platform state changes.  
+**Status:** Active — ARCHITECTURAL INVARIANT  
+**Reason:** Ручное вмешательство через терминал Bybit не должно заставлять систему самостоятельно пересчитывать или перестраивать стратегию.  
+**Consequences:** При расхождении фактического Bybit state и platform configuration система сначала уведомляет трейдера. Далее только по его подтверждению выполняется одно из двух действий: (1) принять внешнее состояние и вручную скорректировать конфигурацию платформы, создав новую revision; или (2) восстановить последнюю подтверждённую конфигурацию платформы из revision history там, где это не требует самостоятельного нового торгового решения. Уже произошедшие executions/manual closes не откатываются и не компенсируются автоматически.
+
+---
+
 ## Knowledge rule
 
 Не превращать EXAMPLE / TRADER EXPLANATION / CANDIDATE в CONFIRMED RULE без явного подтверждения трейдера.
