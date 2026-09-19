@@ -1,76 +1,78 @@
-# Автоматы состояний
+# Автоматы состояний и оркестратор
 
-Чтобы не смешивать состояние биржевой заявки, состояние фактически набранного объёма и состояние Take Profit, используются отдельные автоматы состояний.
+**Статус: АРХИТЕКТУРНАЯ МОДЕЛЬ / ЧАСТЬ СОСТОЯНИЙ ЕЩЁ УТОЧНЯЕТСЯ**
 
-## 1. Состояние ордера сетки (GridOrderState)
+State Machines не принимают торговые решения. Они контролируют допустимые переходы уже существующих сущностей.
 
-```text
-НАСТРОЕН (CONFIGURED)
-↓
-ВЫСТАВЛЕН (PLACED)
-↓
-ЧАСТИЧНО ИСПОЛНЕН (PARTIALLY_FILLED)
-↓
-ПОЛНОСТЬЮ ИСПОЛНЕН (FILLED)
-```
+## 1. GridOrderState
 
-Дополнительные состояния:
+Концептуально:
 
 ```text
-ОТМЕНЁН (CANCELLED)
-ОТКЛОНЁН (REJECTED)
+CONFIGURED
+→ ACTIVE
+→ PARTIALLY_FILLED
+→ FILLED
 ```
 
-Важно: PARTIALLY_FILLED остаётся состоянием того же самого Grid Order.
+Также возможны:
+- CANCELLED / DISABLED;
+- REJECTED на уровне связанного ExchangeOrder.
 
-## 2. Состояние Strategy Lot / фактически набранного объёма
+## 2. StrategyLotState
 
-После первого фактического execution у Grid Order появляется фактически набранный объём, который система должна учитывать отдельно от общей позиции Bybit.
-
-Базовые состояния:
+После первого фактического fill появляется отдельно отслеживаемый исполненный объём.
 
 ```text
-НАБИРАЕТСЯ (ACCUMULATING)
-↓
-АКТИВЕН (ACTIVE)
-↓
-ЧАСТИЧНО ЗАКРЫТ (PARTIALLY_CLOSED)
-↓
-ЗАКРЫТ (CLOSED)
+ACCUMULATING
+→ ACTIVE
+→ PARTIALLY_CLOSED
+→ CLOSED
 ```
 
-Точный момент перехода ACCUMULATING → ACTIVE зависит от технической реализации TP при новых fills и ещё уточняется.
+`ACCUMULATING` означает: Entry Grid Order ещё может получать дополнительные fills, но уже существует фактический объём, которым нужно управлять.
 
-## 3. Состояние этапа Take Profit (TPStepState)
+Точный переход `ACCUMULATING → ACTIVE` ещё требует технического определения.
+
+## 3. TPStepState
 
 ```text
-ОЖИДАЕТ (PENDING)
-↓
-РАССЧИТАН НА ТЕКУЩИЙ filled_qty (ARMED)
-↓
-ВЫСТАВЛЕН ЛИМИТНЫМ ОРДЕРОМ (PLACED)
-↓
-ИСПОЛНЕН (FILLED)
+PENDING
+→ ARMED
+→ PLACED
+→ PARTIALLY_FILLED?
+→ FILLED
 ```
 
-Возможны также:
-- ИЗМЕНЁН (MODIFIED);
-- ОТМЕНЁН (CANCELLED);
-- ЧАСТИЧНО ИСПОЛНЕН (PARTIALLY_FILLED).
+Дополнительно:
+- MODIFIED;
+- CANCELLED;
+- REPLACED.
 
-## 4. Оркестратор жизненного цикла сетки
+## 4. Grid Lifecycle Orchestrator
+
+Оркестратор координирует сущности:
 
 ```text
 Grid
-├── GridOrderState
-├── StrategyLotState
-├── TPStepState
-└── Active Order Window
+├── GridRevision
+├── GridOrderConfig
+├── ExchangeOrder
+├── StrategyLot
+└── TPStep
 ```
 
-Оркестратор:
-- поддерживает заданное количество активных лимитных ордеров;
-- связывает fills с конкретным Grid Order;
-- пересчитывает фактический объём и среднюю цену;
-- синхронизирует TP-заявки;
-- не придумывает торговые решения самостоятельно.
+Он:
+- связывает executions с правильным Grid Order;
+- обновляет filled_qty и average entry;
+- инициирует синхронизацию TP;
+- применяет утверждённую Grid Revision;
+- гарантирует допустимые переходы состояния.
+
+Он **не**:
+- выбирает sizing;
+- решает, когда реструктурировать Grid;
+- рассчитывает новый капитал;
+- принимает risk decisions.
+
+Active Order Window — отдельная execution policy, а не state machine: [active-order-window.md](active-order-window.md).
