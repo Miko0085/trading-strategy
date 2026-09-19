@@ -108,3 +108,17 @@ API keys, runtime responsibilities и safety boundaries у Recorder и Execution
 - roadmap.
 
 Документация не является runtime-компонентом и не должна содержать приватные account dumps/API secrets.
+
+
+## 6. External intervention reconciliation
+
+Если фактическое состояние Bybit отличается от состояния, ожидаемого по последней конфигурации платформы, это считается external intervention / state divergence.
+
+Execution Engine не адаптирует стратегию самостоятельно.
+
+Допустимы только два подтверждённых трейдером действия:
+
+1. Adopt external state — принять ручное изменение как новое фактическое состояние и вручную обновить конфигурацию платформы.
+2. Restore platform state — восстановить последнюю подтверждённую конфигурацию платформы из revision history там, где это технически возможно без создания нового самостоятельного торгового решения.
+
+Любое уже совершившееся execution/manual close остаётся machine truth и не «откатывается». Recorder при этом продолжает независимо фиксировать фактические события Bybit.
