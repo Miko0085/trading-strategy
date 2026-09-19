@@ -22,6 +22,7 @@
 ## Алгоритм
 
 * [Текущий базовый алгоритм](02-algorithm/current-algorithm.md)
+* [Алгоритм реструктуризации сетки](02-algorithm/restructuring-algorithm.md)
 * [Жизненный цикл ордера](02-algorithm/order-lifecycle.md)
 * [Жизненный цикл сетки](02-algorithm/grid-lifecycle.md)
 * [Автоматы состояний](02-algorithm/state-machine.md)
