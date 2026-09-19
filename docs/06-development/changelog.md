@@ -1,5 +1,19 @@
 # История изменений документации
 
+## 2026-09-19 — архитектурная реорганизация
+
+- Разделены Strategy Decision, Risk Manager, Execution Engine и Recorder.
+- Базовый Grid Algorithm очищен от decision/risk/platform responsibilities.
+- Active Order Window вынесен в отдельную execution policy.
+- GridOrderConfig и ExchangeOrder получили раздельные lifecycle.
+- Grid отделён от Grid Revision.
+- StrategyLot/Filled Allocation теперь появляется после первого фактического fill.
+- Restructuring Algorithm перестроен вокруг Capital Recalculation → Volume Recovery → Grid Restructuring → RestructuringPlan.
+- Research capture реструктуризации вынесен в отдельный документ.
+- Data Model расширен RestructuringPlan, RiskDecision, ApprovedExecutionPlan и ExecutionCommand.
+- Roadmap разделён на Domain Model, Execution Core, Restructuring Research, Risk Manager и Controlled Automation.
+
+
 ## 2026-09-19 — уточнение механики после разговора с трейдером
 
 - Исправлена прежняя интерпретация partial fill: TP теперь считается от фактически исполненного объёма filled_qty, а не обязательно ждёт полного configured_qty.
