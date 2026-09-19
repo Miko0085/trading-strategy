@@ -1,9 +1,9 @@
-# DEVELOPMENT RULES — BYBIT STRATEGY RECORDER
+# ПРАВИЛА РАЗРАБОТКИ — BYBIT STRATEGY RECORDER
 
 > Перед изменением логики стратегии/платформы сначала прочитайте `docs/README.md` и:
 > `docs/00-overview/principles.md`, `docs/01-strategy/strategy-overview.md`, `docs/02-algorithm/current-algorithm.md`, `docs/05-research/confirmed-rules.md`, `docs/05-research/open-questions.md`, `docs/06-development/decisions.md`.
 
-## 1. Scope
+## 1. Область ответственности
 
 Проект имеет два параллельных scope:
 
@@ -25,7 +25,7 @@
 - Сохранять raw payload до нормализации.
 - Учитывать reconnect, partial executions и duplicate/repeated events.
 
-## 3. Recorder read-only boundary
+## 3. Граница read-only Recorder
 
 Ограничение read-only относится **строго и навсегда к Recorder-контурy**.
 
@@ -58,7 +58,7 @@ Write/trading methods допускаются только в отдельном 
 
 Secrets не логировать и не хранить в Git.
 
-## 4. Data integrity
+## 4. Целостность данных
 
 Главный приоритет — полнота и воспроизводимость dataset.
 
@@ -80,7 +80,7 @@ Secrets не логировать и не хранить в Git.
 - После подтверждённого удаления атомарно обновить связи и контекст, сохранить предыдущую версию в истории и сбросить подтверждение пояснения до повторной проверки трейдером. Исходный текст, аудио и историю не удалять.
 - Тесты не должны удалять реальные связи ради проверки без отдельного подтверждения; использовать изолированную тестовую БД.
 
-## 5. Storage
+## 5. Хранение данных
 
 Использовать:
 - JSONL — raw black box;
@@ -89,7 +89,7 @@ Secrets не логировать и не хранить в Git.
 
 Collectors не должны быть жёстко связаны с конкретной реализацией SQLite. Использовать repository/storage boundaries, чтобы позже можно было перейти на PostgreSQL.
 
-## 6. Event ingestion
+## 6. Обработка событий
 
 Предпочтительный поток:
 
@@ -109,7 +109,7 @@ TIMELINE / INTERPRETER
 
 Не выполнять длинные независимые SQLite transactions непосредственно из каждого WebSocket callback.
 
-## 7. Failure isolation
+## 7. Изоляция ошибок
 
 - Telegram failure не останавливает Bybit collector.
 - STT failure не приводит к потере voice.
@@ -118,7 +118,7 @@ TIMELINE / INTERPRETER
 - Reconciliation failure фиксируется явно.
 - Graceful shutdown должен drain pending writes.
 
-## 8. Configuration
+## 8. Конфигурация
 
 Не hardcode:
 - symbols;
@@ -133,7 +133,7 @@ TIMELINE / INTERPRETER
 
 Secrets — только ENV.
 
-## 9. Trader UX
+## 9. Интерфейс трейдера
 
 Весь пользовательский интерфейс трейдера — на русском языке.
 
@@ -150,7 +150,7 @@ Telegram не должен спамить raw WebSocket events.
 - проверить транскрипцию;
 - подтвердить или исправить event links.
 
-## 10. Voice
+## 10. Голосовые пояснения
 
 Всегда хранить отдельно:
 - original audio;
@@ -161,7 +161,7 @@ AI summary никогда не заменяет оригинальную тра�
 
 Если STT недоступен — сохранять voice и статус pending/failed с возможностью повторной обработки.
 
-## 11. Strategy knowledge
+## 11. Знания о стратегии
 
 Никогда не додумывать торговые правила.
 
@@ -179,7 +179,7 @@ AI summary никогда не заменяет оригинальную тра�
 
 Важно: Execution Engine может реализовывать **конфигурируемую механику**, даже если reason/decision rule для выбора параметров ещё неизвестен. В таком случае параметры вводит трейдер; система не должна самостоятельно превращать CANDIDATE в автоматическое решение.
 
-## 12. Coding principles
+## 12. Принципы разработки кода
 
 - Python 3.12+.
 - Async I/O там, где это оправдано.
@@ -191,7 +191,7 @@ AI summary никогда не заменяет оригинальную тра�
 - Tests для critical data paths.
 - Не over-engineer MVP.
 
-## 13. Tests
+## 13. Тесты
 
 Обязательно тестировать критические случаи:
 - one order → multiple executions;
@@ -209,7 +209,7 @@ AI summary никогда не заменяет оригинальную тра�
 - удаление/замена связей: без отдельного подтверждения данные не меняются; отмена и устаревшее подтверждение безопасны; подтверждённое изменение сохраняет историю;
 - dataset integrity/export.
 
-## 14. Changes
+## 14. Изменения
 
 При изменении data model, event semantics, reconciliation или storage:
 - учитывать обратную совместимость;
@@ -225,7 +225,7 @@ AI summary никогда не заменяет оригинальную тра�
 - документировать границу ответственности;
 - отдельно тестировать command idempotency, partial fills, cancel/amend races и restart recovery.
 
-## 15. Main rule
+## 15. Главное правило
 
 Если есть выбор между:
 - красивой интерпретацией;
