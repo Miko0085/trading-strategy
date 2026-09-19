@@ -1,66 +1,53 @@
 # Текущий базовый алгоритм
 
-**Статус: CONFIRMED BASE MECHANICS / OPEN DECISION LOGIC**
-
-Этот документ описывает базовую механику, которую уже можно формализовывать технически. Он **не** утверждает, что полностью известна логика выбора параметров.
-
-## Конфигурируемая механика
+**Статус: ПОДТВЕРЖДЁННАЯ БАЗОВАЯ МЕХАНИКА / ОТКРЫТЫЕ ТОРГОВЫЕ РЕШЕНИЯ**
 
 ```text
-START
-  ↓
-Select Symbol
-  ↓
-Configure LONG GRID
-  ↓
-Configure SHORT GRID
-  ↓
-For each Grid Order:
-  - define limit price / spacing
-  - define coin quantity
-  - define partial TP steps
-  ↓
-Place / maintain configured Limit Orders
-  ↓
-Execution(s) occur
-  ↓
-Aggregate executions of source Grid Order
-into Strategy Lot actual average execution price
-  ↓
-Track Strategy Lot independently
-  ↓
-Price reaches configured TP level
-  ↓
-Close configured % of original_qty
-  ↓
-Update closed_qty / remaining_qty
-  ↓
-Continue
+Выбрать актив
+↓
+Создать Long Grid и/или Short Grid
+↓
+Для каждого Grid Order задать:
+- цену / отступ
+- configured_qty
+- TP Steps
+↓
+Отправить лимитные ордера на Bybit
+↓
+Получать фактические Execution / Fill
+↓
+filled_qty == configured_qty?
+    ├─ Нет → продолжаем ждать
+    └─ Да
+         ↓
+    Создать Strategy Lot
+         ↓
+    Рассчитать фактическую среднюю цену исполнения
+         ↓
+    Активировать логику Take Profit
+         ↓
+    Частично или полностью закрывать объём по настройкам
+         ↓
+    Обновлять remaining_qty / closed_qty
 ```
 
-## Что может быть автоматизировано уже на базовом уровне
+## Что может делать механический Execution Engine
 
-Отдельный механический Execution Engine в будущем может:
+- размещать настроенные лимитные ордера;
+- отслеживать исполнение;
+- сопоставлять несколько fills с одним Grid Order;
+- создавать Strategy Lot после полного исполнения;
+- управлять настроенными TP Steps;
+- принимать изменения параметров через интерфейс;
+- сохранять полную историю изменений;
+- сверять ожидаемое состояние с Bybit.
 
-- разместить заранее сконфигурированные limit orders;
-- следить за фактическими executions;
-- создать внутренний Strategy Lot;
-- выставить/исполнить заранее заданные partial TP;
-- пересчитать remaining_qty;
-- принять ручное изменение конфигурации трейдера;
-- отменить выбранные неисполненные orders по команде трейдера.
+## Что он пока не решает сам
 
-Это **не autonomous strategy decisioning**: параметры задаёт человек.
-
-## Что алгоритм пока НЕ решает
-
-- какие именно spacing выбрать;
-- какой qty задать следующему ордеру;
-- когда автоматически перестраивать grid;
-- когда автоматически приближать TP;
-- когда принудительно разгружать lot;
-- какие Risk Manager thresholds использовать;
+- какой объём выбрать;
+- какой отступ выбрать;
+- когда перестроить сетку;
+- когда приблизить TP из-за риска;
+- как распределить капитал Long/Short;
 - нужен ли Stop Loss;
-- как автоматически распределять капитал Long/Short.
-
-Эти вопросы не должны блокировать реализацию самой базовой механики.
+- как должен действовать Risk Manager.
