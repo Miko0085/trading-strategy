@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Activity, ArrowDown, ArrowUp, Check, ChevronDown, Clock3, History, LockKeyhole, Plus, Save, Settings2, ShieldCheck, Trash2, Wifi, X } from "lucide-react";
 import { AccountState, Allocation, GridOrder, Side, allocationLimits, guard, initialAccount, newOrder, pnl, prices, tpPrice } from "./domain";
+import { ApiError, fetchJson } from "./api";
+import { normalizeAccountResponse } from "./accountMapping";
 import "./styles.css";
 import "./state.css";
 
@@ -22,6 +24,7 @@ function App() {
   const [revisions, setRevisions] = useState<{time: string; action: string; side?: string; entityType?: string}[]>([]);
   const [notice, setNotice] = useState("");
   const [diagnostic, setDiagnostic] = useState<any>(null);
+  const [backendConnected, setBackendConnected] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false); const [saving, setSaving] = useState(false); const [page, setPage] = useState<"constructor" | "state">("constructor"); const [planningLeverage, setPlanningLeverage] = useState<number | null>(null); const [authoritative, setAuthoritative] = useState<any>(null);
   const available = account.availableMargin;
   const tickSize = account.instrument?.tickSize ?? null;
@@ -37,43 +40,53 @@ function App() {
     if (!authoritative) { setNotice("Сначала получите подтверждённый backend-расчёт"); return; }
     setSaving(true); setNotice("");
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: account.symbol, comment: "", configuration: { symbol: account.symbol, allocation, planningLeverage, activeLongCount: activeLong, activeShortCount: activeShort, long, short } }) });
-      if (!response.ok) throw new Error("save failed");
+      await fetchJson("/api/revisions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: account.symbol, comment: "", configuration: { symbol: account.symbol, allocation, planningLeverage, activeLongCount: activeLong, activeShortCount: activeShort, long, short } }) });
       setRevisions((r) => [{ time: new Date().toLocaleString("ru-RU"), action: "Сохранена новая версия конфигурации" }, ...r]);
       setNotice(authoritative.validation_state === "BLOCKED" ? "Версия сохранена, но конфигурация заблокирована для исполнения" : "Версия сохранена в PostgreSQL");
-    } catch { setNotice("Не удалось сохранить: проверьте backend и PostgreSQL"); }
+    } catch (error) { setNotice(error instanceof ApiError ? error.message : "Не удалось сохранить: проверьте backend и PostgreSQL"); }
     setSaving(false);
   };
   const localPlanBlocked = !longGuard.allowed || !shortGuard.allowed || allocation.longPct + allocation.shortPct + allocation.reservePct !== 100;
   const planBlocked = authoritative ? authoritative.validation_state !== "VALID" : localPlanBlocked;
   useEffect(() => {
     const load = async () => {
+      let health: any;
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/state/${account.symbol}`);
-        if (!response.ok) return;
-        const data = await response.json();
-        const normalizedPosition = (position: any) => position ? ({ side: position.side, size: position.size == null ? null : Number(position.size), avgEntryPrice: position.avg_entry_price == null ? null : Number(position.avg_entry_price), unrealizedPnl: position.unrealized_pnl == null ? null : Number(position.unrealized_pnl), leverage: position.leverage == null ? null : Number(position.leverage), initialMargin: position.initial_margin == null ? null : Number(position.initial_margin), maintenanceMargin: position.maintenance_margin == null ? null : Number(position.maintenance_margin), notional: position.notional == null ? null : Number(position.notional) }) : null;
-        const openOrders = (data.orders || []).map((item: any) => ({ orderId: item.order_id ?? null, side: item.side ?? null, status: item.status ?? null, price: item.price == null ? null : Number(item.price), qty: item.qty == null ? null : Number(item.qty), leavesQty: item.leaves_qty == null ? null : Number(item.leaves_qty) }));
-        setAccount((a) => ({ ...a, markPrice: data.mark_price == null ? null : Number(data.mark_price), availableMargin: data.available_margin == null ? null : Number(data.available_margin), equity: data.equity == null ? null : Number(data.equity), walletBalance: data.wallet_balance == null ? null : Number(data.wallet_balance), initialMargin: data.initial_margin == null ? null : Number(data.initial_margin), maintenanceMargin: data.maintenance_margin == null ? null : Number(data.maintenance_margin), grossExposure: data.gross_exposure == null ? null : Number(data.gross_exposure), netExposure: data.net_exposure == null ? null : Number(data.net_exposure), longPosition: normalizedPosition(data.long), shortPosition: normalizedPosition(data.short), openOrders, instrument: data.instrument ? { symbol: data.instrument.symbol, tickSize: data.instrument.tick_size == null ? null : Number(data.instrument.tick_size), qtyStep: data.instrument.qty_step == null ? null : Number(data.instrument.qty_step), minOrderQty: data.instrument.min_order_qty == null ? null : Number(data.instrument.min_order_qty), minNotionalValue: data.instrument.min_notional_value == null ? null : Number(data.instrument.min_notional_value) } : null, source: data.source, stale: Boolean(data.stale), updatedAt: data.updated_at || null }));
-      } catch { setAccount((a) => ({ ...a, stale: true, error: "Нет свежего обновления от backend" })); }
+        health = await fetchJson<any>("/api/health");
+        setBackendConnected(true);
+        const status = health.private_state_ready ? health : await fetchJson<any>(`/api/diagnostics/bybit?symbol=${account.symbol}`);
+        setDiagnostic(status);
+      } catch (error) {
+        const message = error instanceof ApiError ? error.message : "Backend недоступен";
+        setBackendConnected(false);
+        setDiagnostic({ private_state_ready: false, last_safe_error: message });
+        setAccount((a) => ({ ...a, stale: true, error: message }));
+        return;
+      }
+      try {
+        const data = await fetchJson<any>(`/api/state/${account.symbol}`);
+        setAccount((a) => normalizeAccountResponse(data, a));
+      } catch (error) {
+        const message = error instanceof ApiError ? error.message : "Нет свежего обновления Bybit";
+        setAccount((a) => ({ ...a, stale: true, error: message }));
+      }
     };
     void load();
     const timer = setInterval(load, 15000);
     return () => clearInterval(timer);
   }, [account.symbol]);
-  useEffect(() => { fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/symbols`).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => setSymbols(data.symbols || [])).catch(() => setSymbols([])); }, []);
-  useEffect(() => { const load = async () => { try { const health = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/health`).then((response) => response.json()); if (health.private_state_ready) setDiagnostic(health); else setDiagnostic(await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/diagnostics/bybit?symbol=${account.symbol}`).then((response) => response.json())); } catch { setDiagnostic({ private_state_ready: false, last_safe_error: "Backend недоступен" }); } }; void load(); }, [account.symbol]);
-  useEffect(() => { if (!historyOpen) return; fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/audit`).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => setRevisions(data.map((item: any) => ({ time: item.created_at, action: item.action, side: item.side, entityType: item.entity_type })))).catch(() => undefined); }, [historyOpen]);
+  useEffect(() => { fetchJson<any>("/api/symbols").then((data) => setSymbols(data.symbols || [])).catch(() => setSymbols([])); }, []);
+  useEffect(() => { if (!historyOpen) return; fetchJson<any[]>("/api/audit").then((data) => setRevisions(data.map((item: any) => ({ time: item.created_at, action: item.action, side: item.side, entityType: item.entity_type })))).catch(() => undefined); }, [historyOpen]);
   useEffect(() => {
     if (account.markPrice == null || account.availableMargin == null || !account.instrument || [account.instrument.tickSize, account.instrument.qtyStep, account.instrument.minOrderQty, account.instrument.minNotionalValue].some((value) => value == null) || planningLeverage == null) return;
     const payload = { symbol: account.symbol, planningLeverage, allocation, activeLongCount: activeLong, activeShortCount: activeShort, long, short };
-    const timer = setTimeout(async () => { try { const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/calculate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (!response.ok) { setAuthoritative(null); return; } setAuthoritative(await response.json()); } catch { setAuthoritative(null); } }, 250);
+    const timer = setTimeout(async () => { try { setAuthoritative(await fetchJson<any>("/api/calculate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })); } catch { setAuthoritative(null); } }, 250);
     return () => clearTimeout(timer);
   }, [account, allocation, activeLong, activeShort, long, short, planningLeverage]);
   return <div className="app-shell">
     <aside className="sidebar"><div className="logo"><span>G</span><div>СЕТКА<br/><b>КОНТРОЛЬ</b></div></div><div className="mode-pill"><span></span> ТЕСТОВЫЙ РЕЖИМ</div><nav><button className={page === "constructor" ? "active" : ""} onClick={() => setPage("constructor")}><Settings2 size={16}/> Конструктор</button><button className={page === "state" ? "active" : ""} onClick={() => setPage("state")}><Activity size={16}/> Состояние</button><button onClick={() => setHistoryOpen(true)}><History size={16}/> История</button></nav><div className="sidebar-bottom"><LockKeyhole size={15}/><span>Только чтение<br/><small>Торговые команды отключены</small></span></div></aside>
-    <main className="content"><header className="topbar"><div><div className="crumb">РУЧНАЯ СЕТКА / НАСТРОЙКА</div><h1>Ручная настройка сетки</h1>{notice && <div className="notice">{notice}</div>}</div><div className="top-actions"><span className="connection"><Wifi size={14}/> {account.source === "bybit_read_only" ? "Bybit: только чтение" : "Нет свежих данных"}</span><button className="outline" onClick={() => setHistoryOpen(true)}><History size={16}/> История</button><button className="save" onClick={save}><Save size={16}/> {saving ? "Сохраняю…" : "Сохранить версию"}</button></div></header>
-      <section className="account-strip"><label className="symbol-select"><span>ИНСТРУМЕНТ</span><select value={account.symbol} onChange={(e) => setAccount((a) => ({ ...a, symbol: e.target.value, stale: true, source: "ожидание обновления", updatedAt: null }))}><option value={account.symbol}>{account.symbol}</option>{symbols.filter((symbol) => symbol !== account.symbol).map((symbol) => <option key={symbol} value={symbol}>{symbol}</option>)}</select><ChevronDown size={14}/></label><Metric label="Марк-цена" value={price(account.markPrice)}/><Metric label="Баланс кошелька" value={money(account.walletBalance)}/><Metric label="Капитал аккаунта" value={money(account.equity)}/><Metric label="Доступная маржа" value={money(available)} accent/><label className="metric leverage-input"><span>Плановый леверидж</span><input type="number" min="1" step="0.1" value={planningLeverage ?? ""} placeholder="укажите" onChange={(e) => setPlanningLeverage(e.target.value ? Number(e.target.value) : null)}/></label><div className="updated"><Clock3 size={13}/> {diagnostic?.private_state_ready ? "Bybit подключён" : diagnostic?.last_safe_error || "Приватные данные Bybit недоступны"}<br/>{account.updatedAt ? new Date(account.updatedAt).toLocaleTimeString("ru-RU") : "нет обновления"}</div></section>
+    <main className="content"><header className="topbar"><div><div className="crumb">РУЧНАЯ СЕТКА / НАСТРОЙКА</div><h1>Ручная настройка сетки</h1>{notice && <div className="notice">{notice}</div>}</div><div className="top-actions"><span className="connection"><Wifi size={14}/> {!backendConnected ? "Backend недоступен" : account.error || (diagnostic?.private_state_ready ? "Bybit подключён" : "Приватные данные Bybit недоступны")}</span><button className="outline" onClick={() => setHistoryOpen(true)}><History size={16}/> История</button><button className="save" onClick={save}><Save size={16}/> {saving ? "Сохраняю…" : "Сохранить версию"}</button></div></header>
+      <section className="account-strip"><label className="symbol-select"><span>ИНСТРУМЕНТ</span><select value={account.symbol} onChange={(e) => setAccount((a) => ({ ...a, symbol: e.target.value, stale: true, source: "ожидание обновления", updatedAt: null }))}><option value={account.symbol}>{account.symbol}</option>{symbols.filter((symbol) => symbol !== account.symbol).map((symbol) => <option key={symbol} value={symbol}>{symbol}</option>)}</select><ChevronDown size={14}/></label><Metric label="Марк-цена" value={price(account.markPrice)}/><Metric label="Баланс кошелька" value={money(account.walletBalance)}/><Metric label="Капитал аккаунта" value={money(account.equity)}/><Metric label="Доступная маржа" value={money(available)} accent/><label className="metric leverage-input"><span>Плановый леверидж</span><input type="number" min="1" step="0.1" value={planningLeverage ?? ""} placeholder="укажите" onChange={(e) => setPlanningLeverage(e.target.value ? Number(e.target.value) : null)}/></label><div className="updated"><Clock3 size={13}/> Источник: {account.source === "bybit_read_only" ? "Bybit read-only" : "нет данных"}<br/>{account.updatedAt ? `Обновлено: ${new Date(account.updatedAt).toLocaleTimeString("ru-RU")}` : "нет обновления"}</div></section>
       {page === "constructor" ? <><section className="allocation-panel"><div className="section-title"><div><span className="overline">КАПИТАЛ</span><h2>Распределение доступной маржи</h2></div><span className="allocation-total">{allocation.longPct + allocation.shortPct + allocation.reservePct === 100 ? <><Check size={14}/> 100% распределено</> : <><X size={14}/> Должно быть 100%</>}</span></div><div className="allocation-grid"><AllocationBox title="Лонг" color="green" value={allocation.longPct} limit={limitsBySide.long} onChange={(v) => updateAllocation("longPct", v)}/><AllocationBox title="Шорт" color="red" value={allocation.shortPct} limit={limitsBySide.short} onChange={(v) => updateAllocation("shortPct", v)}/><AllocationBox title="Резерв" color="amber" value={allocation.reservePct} limit={limitsBySide.reserve} onChange={(v) => updateAllocation("reservePct", v)}/></div></section><div className="three-columns"><GridColumn side="long" orders={long} active={activeLong} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={longGuard} calculation={authoritative?.long} onActive={setActiveLong} onAdd={() => addOrder("long")} onEdit={(id, p) => editOrder("long", id, p)} onRemove={(id) => removeOrder("long", id)}/><CenterPanel account={account} long={long} short={short} tickSize={tickSize} totalPlanned={totalPlanned} calculation={authoritative} blocked={planBlocked}/><GridColumn side="short" orders={short} active={activeShort} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={shortGuard} calculation={authoritative?.short} onActive={setActiveShort} onAdd={() => addOrder("short")} onEdit={(id, p) => editOrder("short", id, p)} onRemove={(id) => removeOrder("short", id)}/></div></> : <StateView account={account} long={long} short={short} />}
     </main>{historyOpen && <HistoryDrawer items={revisions} close={() => setHistoryOpen(false)}/>} 
   </div>;
