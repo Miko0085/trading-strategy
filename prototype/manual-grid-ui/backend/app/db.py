@@ -16,7 +16,8 @@ class RevisionRepository:
         return psycopg.connect(self.database_url)
 
     def save(self, symbol: str, comment: str, payload: dict[str, Any], *, environment: str) -> dict[str, Any]:
-        allocation = payload.get("allocation", {})
+        configuration = payload.get("configuration", payload)
+        allocation = configuration.get("allocation", {})
         validation_state = payload.get("calculation", {}).get("validation_state", "BLOCKED")
         with self._connect() as connection:
             with connection.cursor() as cursor:
@@ -38,15 +39,41 @@ class RevisionRepository:
                 cursor.execute("INSERT INTO grid_revisions(grid_id,revision_no,payload,market_snapshot,comment,validation_state,validation_errors) VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id,created_at", (grid[0], number, json.dumps(payload), json.dumps(market_snapshot), comment, validation_state, json.dumps(payload.get("calculation", {}).get("validation_errors", []))))
                 revision_id, created_at = cursor.fetchone()
                 for side in ("long", "short"):
-                    for level, order in enumerate(payload.get(side, []), start=1):
+                    for level, order in enumerate(configuration.get(side, []), start=1):
                         cursor.execute("INSERT INTO grid_order_configs(revision_id,side,level,entry_offset_pct,configured_qty,note) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id", (revision_id, side, level, order.get("offset_pct"), order.get("qty"), order.get("note", "")))
                         order_id = cursor.fetchone()[0]
                         for step, tp in enumerate(order.get("tps", []), start=1):
                             cursor.execute("INSERT INTO tp_step_configs(order_config_id,step_no,move_pct,close_pct) VALUES(%s,%s,%s,%s)", (order_id, step, tp.get("move_pct"), tp.get("close_pct")))
-                cursor.execute("INSERT INTO allocation_configs(revision_id,long_pct,short_pct,reserve_pct,active_long_count,active_short_count) VALUES(%s,%s,%s,%s,%s,%s)", (revision_id, allocation.get("long_pct"), allocation.get("short_pct"), allocation.get("reserve_pct"), payload.get("activeLongCount", 1), payload.get("activeShortCount", 1)))
+                cursor.execute("INSERT INTO allocation_configs(revision_id,long_pct,short_pct,reserve_pct,active_long_count,active_short_count) VALUES(%s,%s,%s,%s,%s,%s)", (revision_id, allocation.get("long_pct"), allocation.get("short_pct"), allocation.get("reserve_pct"), configuration.get("active_long_count", 1), configuration.get("active_short_count", 1)))
                 cursor.execute("INSERT INTO account_snapshots(account_id,symbol,payload) VALUES(%s,%s,%s)", (account[0], symbol, json.dumps(market_snapshot)))
                 cursor.execute("INSERT INTO audit_events(account_id,entity,entity_type,entity_id,side,action,before_payload,after_payload) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)", (account[0], symbol, "grid_revision", str(revision_id), None, "revision_saved", json.dumps(previous[2]) if previous else None, json.dumps(payload)))
+                self._write_change_audits(cursor, account[0], symbol, previous[2] if previous else None, payload)
         return {"id": str(revision_id), "symbol": symbol, "comment": comment, "payload": payload, "validation_state": validation_state, "created_at": created_at.isoformat()}
+
+    @staticmethod
+    def _write_change_audits(cursor, account_id, symbol: str, previous: dict[str, Any] | None, current: dict[str, Any]) -> None:
+        before = (previous or {}).get("configuration", previous or {})
+        after = current.get("configuration", current)
+
+        def event(entity_type: str, entity_id: str, side: str | None, action: str, old: Any, new: Any) -> None:
+            cursor.execute("INSERT INTO audit_events(account_id,entity,entity_type,entity_id,side,action,before_payload,after_payload) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)", (account_id, symbol, entity_type, entity_id, side, action, json.dumps(old), json.dumps(new)))
+
+        if previous and before.get("allocation") != after.get("allocation"):
+            event("allocation", "allocation", None, "allocation_changed", before.get("allocation"), after.get("allocation"))
+        for side in ("long", "short"):
+            old_orders = {item.get("id") or f"level-{index}": item for index, item in enumerate(before.get(side, []), start=1)}
+            new_orders = {item.get("id") or f"level-{index}": item for index, item in enumerate(after.get(side, []), start=1)}
+            for entity_id in new_orders.keys() - old_orders.keys():
+                event("grid_order", entity_id, side, "grid_order_added", None, new_orders[entity_id])
+            for entity_id in old_orders.keys() - new_orders.keys():
+                event("grid_order", entity_id, side, "grid_order_deleted", old_orders[entity_id], None)
+            for entity_id in new_orders.keys() & old_orders.keys():
+                old_order, new_order = old_orders[entity_id], new_orders[entity_id]
+                for field, action in (("offset_pct", "grid_order_offset_changed"), ("qty", "grid_order_qty_changed"), ("note", "note_changed")):
+                    if old_order.get(field) != new_order.get(field):
+                        event("grid_order", entity_id, side, action, {field: old_order.get(field)}, {field: new_order.get(field)})
+                if old_order.get("tps") != new_order.get("tps"):
+                    event("tp_step", entity_id, side, "tp_changed", old_order.get("tps"), new_order.get("tps"))
 
     def list(self, symbol: str | None = None) -> list[dict[str, Any]]:
         with self._connect() as connection, connection.cursor() as cursor:

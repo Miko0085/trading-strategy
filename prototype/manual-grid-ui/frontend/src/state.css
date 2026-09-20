@@ -2,3 +2,4 @@
 .symbol-select select{appearance:none;background:transparent;border:0;color:var(--text);font-weight:650;font-size:17px;outline:none;margin-top:5px;padding:0;width:100%}.leverage-input input{display:block;width:70px;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--text);outline:none;margin-top:6px;padding:2px}
 .history-filter{width:100%;margin:20px 0 8px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;color:var(--text);padding:8px}
 .configured-title{margin-top:18px;padding-top:12px;border-top:1px solid var(--line)}.empty-inline{color:var(--muted);font-size:11px;padding:12px 0}
+.utilization-meter{height:6px;background:#27313d;border-radius:6px;overflow:hidden;margin:12px 0 5px}.utilization-meter span{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--amber));border-radius:6px}.utilization-label{font-size:10px;color:var(--muted);margin-bottom:10px}

@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Iterable
 
+from .active_window import ActiveWindowPolicy
+
 
 ZERO = Decimal("0")
 
@@ -142,6 +144,9 @@ def calculate_side(
         tps = item.get("tps", [])
         item_errors.extend(validate_tp_steps(tps))
         filled_qty = D(item.get("filled_qty", "0"))
+        actual_closed_qty = D(item.get("actual_closed_qty", "0"))
+        if actual_closed_qty > filled_qty:
+            item_errors.append("actual_closed_qty cannot exceed filled_qty")
         actual_entry = D(item["avg_fill_price"]) if item.get("avg_fill_price") is not None else price
         base_qty = filled_qty if filled_qty > ZERO else quantity
         tp_results: list[dict[str, Any]] = []
@@ -159,7 +164,8 @@ def calculate_side(
         validation = item_errors
         if validation:
             errors.append({"level": index, "errors": validation})
-        normalized.append({"level": index, "price": price, "qty": quantity, "notional": notional(price, quantity), "planned_margin": estimated_margin(price, quantity, leverage) if leverage is not None else None, "filled_qty": filled_qty, "open_qty": max(ZERO, filled_qty - sum((x["qty"] for x in tp_results), ZERO)), "avg_entry_price": actual_entry if filled_qty > ZERO else None, "tp_steps": tp_results, "gross_pnl": gross_total, "fee_estimate": fee_total if fee_rate is not None else None, "net_pnl": gross_total - fee_total if fee_rate is not None else None, "validation_errors": validation, "status": "VALID" if not validation else "BLOCKED"})
+        planned_tp_qty = sum((x["qty"] for x in tp_results), ZERO)
+        normalized.append({"level": index, "planned_entry_price": price, "configured_qty": quantity, "price": price, "qty": quantity, "notional": notional(price, quantity), "planned_margin": estimated_margin(price, quantity, leverage) if leverage is not None else None, "filled_qty": filled_qty, "actual_avg_entry_price": actual_entry if filled_qty > ZERO and item.get("avg_fill_price") is not None else None, "avg_entry_price": actual_entry if filled_qty > ZERO else None, "actual_closed_qty": actual_closed_qty, "open_qty": max(ZERO, filled_qty - actual_closed_qty), "planned_tp_qty": planned_tp_qty, "planned_remaining_after_all_tp": max(ZERO, base_qty - planned_tp_qty), "tp_steps": tp_results, "gross_pnl": gross_total, "fee_estimate": fee_total if fee_rate is not None else None, "net_pnl": gross_total - fee_total if fee_rate is not None else None, "validation_errors": validation, "status": "VALID" if not validation else "BLOCKED"})
     planned_margins = [item["planned_margin"] for item in normalized]
     full_margin = sum((item for item in planned_margins if item is not None), ZERO) if leverage is not None else None
     active_margin = sum((normalized[index]["planned_margin"] for index in range(active_count) if normalized[index]["planned_margin"] is not None), ZERO) if leverage is not None else None
@@ -167,30 +173,43 @@ def calculate_side(
     prices_list = [item["price"] for item in normalized]
     planned_avg = weighted_average(list(zip(quantities, prices_list, strict=True)))
     cumulative = cumulative_averages(prices_list, quantities)
-    return {"side": side, "orders": normalized, "full_grid_planned_margin": full_margin, "active_window_planned_margin": active_margin, "queued_planned_margin": queued_margin, "planned_qty": sum(quantities, ZERO), "planned_average": planned_avg, "cumulative_planned_average": cumulative, "validation_errors": errors, "status": "VALID" if not errors else "BLOCKED"}
+    for item, cumulative_average in zip(normalized, cumulative, strict=True):
+        item["cumulative_planned_average"] = cumulative_average
+    aggregate_gross = sum((item["gross_pnl"] for item in normalized), ZERO)
+    aggregate_fee = sum((item["fee_estimate"] for item in normalized if item["fee_estimate"] is not None), ZERO) if fee_rate is not None else None
+    policy = ActiveWindowPolicy(len(normalized), active_count)
+    return {"side": side, "orders": normalized, "active_window_levels": policy.active_levels(), "queued_levels": policy.queued_levels(), "next_activation_candidate": policy.queued_levels()[0] if policy.queued_levels() else None, "full_grid_planned_margin": full_margin, "active_window_planned_margin": active_margin, "queued_planned_margin": queued_margin, "planned_qty": sum(quantities, ZERO), "planned_average": planned_avg, "cumulative_planned_average": cumulative, "aggregate_tp_gross_pnl": aggregate_gross, "aggregate_fee_estimate": aggregate_fee, "aggregate_net_pnl": aggregate_gross - aggregate_fee if aggregate_fee is not None else None, "validation_errors": errors, "status": "VALID" if not errors else "BLOCKED"}
 
 
 def calculate_configuration(payload: dict[str, Any], *, instrument: dict[str, Any], account: dict[str, Any] | None = None) -> dict[str, Any]:
     allocation = payload["allocation"]
-    available = required_decimal(account or payload, "available_margin")
+    available = required_decimal(account, "available_margin") if account is not None else required_decimal(payload, "available_margin")
     if any(D(allocation[key]) < ZERO or D(allocation[key]) > Decimal("100") for key in ("long_pct", "short_pct", "reserve_pct")):
         raise ValueError("allocation percentages must be between 0 and 100")
     limits = {key: required_decimal(instrument, key) for key in ("tick_size", "qty_step", "min_order_qty", "min_notional_value")}
-    leverage = D(payload["leverage"]) if payload.get("leverage") is not None else None
+    leverage_value = payload.get("leverage", payload.get("planning_leverage"))
+    leverage = D(leverage_value) if leverage_value is not None else None
     fee_rate = D(payload["fee_rate"]) if payload.get("fee_rate") is not None else None
     allocation_result = allocation_limits(available, D(allocation["long_pct"]), D(allocation["short_pct"]), D(allocation["reserve_pct"]))
     mark = required_decimal(payload, "mark_price")
-    result: dict[str, Any] = {"symbol": payload["symbol"], "mark_price": mark, "available_margin": available, "instrument": limits, "leverage": leverage, "fee_rate": fee_rate, "allocation_limits": allocation_result}
+    result: dict[str, Any] = {"symbol": payload["symbol"], "mark_price": mark, "available_margin": available, "instrument": limits, "leverage": leverage, "fee_rate": fee_rate, "allocation_limits": allocation_result, "account_state_timestamp": payload.get("account_state_timestamp"), "instrument_source": payload.get("instrument_source")}
     for side in ("long", "short"):
         result[side] = calculate_side(side=side, mark_price=mark, orders=payload[side], active_count=int(payload[f"active_{side}_count"]), leverage=leverage, fee_rate=fee_rate, **limits)
         result[side]["allocation_limit"] = allocation_result[side]
         current_margin = (account or {}).get(f"{side}_initial_margin")
         result[side]["current_used_context"] = D(current_margin) if current_margin not in (None, "") else None
+        result[side]["current_position_context"] = result[side]["current_used_context"]
         result[side]["remaining_limit"] = allocation_result[side] - (result[side]["full_grid_planned_margin"] or ZERO)
         result[side]["utilization_pct"] = ((result[side]["full_grid_planned_margin"] or ZERO) / allocation_result[side] * 100) if allocation_result[side] else None
         result[side]["excess"] = max(ZERO, -result[side]["remaining_limit"]) if leverage is not None else None
         if result[side]["remaining_limit"] < ZERO:
             result[side]["validation_errors"].append({"level": 0, "errors": ["full grid exceeds allocation limit"]})
             result[side]["status"] = "BLOCKED"
+    result["combined_planned_margin"] = (result["long"]["full_grid_planned_margin"] or ZERO) + (result["short"]["full_grid_planned_margin"] or ZERO)
+    result["combined_gross_pnl"] = result["long"]["aggregate_tp_gross_pnl"] + result["short"]["aggregate_tp_gross_pnl"]
+    fees = [result[side]["aggregate_fee_estimate"] for side in ("long", "short")]
+    result["combined_fee_estimate"] = sum(fees, ZERO) if all(fee is not None for fee in fees) else None
+    result["combined_net_pnl"] = result["combined_gross_pnl"] - result["combined_fee_estimate"] if result["combined_fee_estimate"] is not None else None
+    result["validation_errors"] = result["long"]["validation_errors"] + result["short"]["validation_errors"]
     result["validation_state"] = "VALID" if result["long"]["status"] == result["short"]["status"] == "VALID" else "BLOCKED"
     return result

@@ -6,14 +6,15 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 
-from .account_state import normalize_account, normalize_instrument
+from .account_service import AccountStateService
 from .bybit import ReadOnlyBybitClient, ReadOnlyBybitError
 from .calculations import calculate_configuration
 from .config import Settings
 from .db import RevisionRepository
-from .schemas import RevisionIn
+from .schemas import GridConfigurationDTO, SaveRevisionDTO
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.private_configured:
             await client.validate_read_only()
             app.state.private_ready = True
+        app.state.account_service = AccountStateService(client, stale_after_seconds=settings.stale_after_seconds)
         try:
             yield
         finally:
@@ -46,8 +48,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/symbols")
     async def symbols(query: str = "") -> dict[str, Any]:
         try:
-            result = await app.state.bybit.instrument("linear")
-            values = [item.get("symbol") for item in result.get("list", []) if item.get("symbol") and query.upper() in item["symbol"]]
+            values: list[str] = []
+            cursor: str | None = None
+            for _ in range(10):
+                result = await app.state.bybit.instrument("linear", **({"cursor": cursor} if cursor else {}))
+                values.extend(item["symbol"] for item in result.get("list", []) if item.get("symbol") and query.upper() in item["symbol"])
+                cursor = result.get("nextPageCursor")
+                if not cursor or len(values) >= 100:
+                    break
             return {"symbols": values[:100], "updated_at": datetime.now(UTC).isoformat()}
         except ReadOnlyBybitError as exc:
             raise HTTPException(502, "Не удалось получить список инструментов") from exc
@@ -56,33 +64,65 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def state(symbol: str) -> dict[str, Any]:
         symbol = symbol.upper()
         try:
-            ticker = await app.state.bybit.mark_price("linear", symbol)
-            instrument = normalize_instrument(await app.state.bybit.instrument("linear", symbol))
-            wallet = await app.state.bybit.account_state() if app.state.private_ready else {}
-            positions = await app.state.bybit.positions("linear", symbol) if app.state.private_ready else {}
-            orders = await app.state.bybit.open_orders("linear", symbol) if app.state.private_ready else {}
-            normalized = normalize_account(wallet, positions, orders, ticker, instrument, "bybit_read_only" if app.state.private_ready else "public_only")
-            normalized["updated_at"] = datetime.now(UTC).isoformat()
-            normalized["stale"] = False
-            return normalized
+            return await app.state.account_service.refresh(symbol, require_private=app.state.private_ready)
         except ReadOnlyBybitError as exc:
-            raise HTTPException(502, "Bybit state is unavailable; cached values must be treated as stale") from exc
+            raise HTTPException(502, "Bybit state is unavailable") from exc
+
+    async def authoritative_payload(configuration: GridConfigurationDTO, client_payload: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+        client_payload = client_payload or {}
+        if app.state.private_ready:
+            state = await app.state.account_service.get(configuration.symbol, require_private=True)
+            if state.get("available_margin") is None or state.get("mark_price") is None:
+                raise ReadOnlyBybitError("Critical account state is unavailable")
+            factual = {
+                "mark_price": state["mark_price"],
+                "available_margin": state["available_margin"],
+                "instrument": state["instrument"],
+                "account": {
+                    "available_margin": state["available_margin"],
+                    "long_initial_margin": (state.get("long") or {}).get("initial_margin"),
+                    "short_initial_margin": (state.get("short") or {}).get("initial_margin"),
+                },
+                "account_state_timestamp": state.get("updated_at"),
+                "instrument_source": "bybit_read_only",
+            }
+        elif settings.allow_fixture_data:
+            factual = {key: client_payload.get(key) for key in ("mark_price", "available_margin", "instrument", "account", "account_state_timestamp", "instrument_source")}
+            factual["account"] = factual.get("account") or {"available_margin": factual.get("available_margin")}
+            if not factual.get("mark_price") or not factual.get("available_margin") or not factual.get("instrument"):
+                raise ReadOnlyBybitError("Fixture factual state is incomplete")
+        else:
+            raise ReadOnlyBybitError("Private read-only Bybit state is required for authoritative calculation")
+        normalized = configuration.domain_payload()
+        normalized.update({key: value for key, value in factual.items() if value is not None})
+        return normalized, factual
 
     @app.post("/api/calculate")
     async def calculate(payload: dict[str, Any]) -> dict[str, Any]:
         try:
-            instrument = payload.get("instrument") or normalize_instrument(await app.state.bybit.instrument("linear", payload["symbol"].upper()))
-            return calculate_configuration(payload, instrument=instrument, account=payload.get("account"))
+            configuration = GridConfigurationDTO.model_validate(payload)
+            factual_payload, _ = await authoritative_payload(configuration, payload)
+            return calculate_configuration(factual_payload, instrument=factual_payload["instrument"], account=factual_payload["account"])
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(422, str(exc)) from exc
         except ReadOnlyBybitError as exc:
-            raise HTTPException(502, "Не удалось получить ограничения инструмента") from exc
+            raise HTTPException(503, "Нет подтверждённого состояния аккаунта Bybit") from exc
 
     @app.post("/api/revisions")
-    async def save_revision(item: RevisionIn) -> dict[str, Any]:
+    async def save_revision(item: SaveRevisionDTO) -> dict[str, Any]:
         try:
-            return app.state.repository.save(item.symbol, item.comment, item.payload, environment="testnet" if settings.bybit_testnet else "mainnet")
+            raw_configuration = item.configuration.model_dump(mode="json", by_alias=False) if item.configuration else item.payload or {}
+            raw_configuration["symbol"] = item.symbol
+            configuration = GridConfigurationDTO.model_validate(raw_configuration)
+            factual_payload, factual = await authoritative_payload(configuration, raw_configuration)
+            calculation = calculate_configuration(factual_payload, instrument=factual_payload["instrument"], account=factual_payload["account"])
+            persisted = {"configuration": configuration.domain_payload(), "market_snapshot": factual, "calculation": jsonable_encoder(calculation)}
+            return app.state.repository.save(item.symbol, item.comment, persisted, environment="testnet" if settings.bybit_testnet else "mainnet")
         except Exception as exc:  # noqa: BLE001 -- API boundary returns safe storage error
+            if isinstance(exc, (KeyError, TypeError, ValueError)):
+                raise HTTPException(422, str(exc)) from exc
+            if isinstance(exc, ReadOnlyBybitError):
+                raise HTTPException(503, "Нет подтверждённого состояния аккаунта Bybit") from exc
             raise HTTPException(503, "PostgreSQL недоступен или миграция не выполнена") from exc
 
     @app.get("/api/revisions")

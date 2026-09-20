@@ -1,7 +1,5 @@
 from decimal import Decimal
 
-import pytest
-
 from app.account_state import normalize_account, normalize_instrument, normalize_positions
 from app.active_window import ActiveWindowPolicy
 from app.calculations import calculate_configuration
@@ -68,3 +66,12 @@ def test_missing_side_size_does_not_become_fake_zero():
     result = normalize_account({"list": []}, {"list": [{"side": "Buy", "positionIdx": 1, "avgPrice": "100"}]}, {"list": []}, {"list": [{"symbol": "BTCUSDT", "markPrice": "105"}]}, {"symbol": "BTCUSDT"}, "bybit_read_only")
     assert result["long"]["size"] is None
     assert result["gross_exposure"] is None
+
+
+def test_configured_tp_does_not_reduce_actual_open_qty():
+    payload = config(long=[{"offset_pct": "10", "qty": "10", "filled_qty": "4", "avg_fill_price": "95", "actual_closed_qty": "0", "tps": [{"move_pct": "10", "close_pct": "50"}]}])
+    result = calculate_configuration(payload, instrument=INSTRUMENT)
+    order = result["long"]["orders"][0]
+    assert order["open_qty"] == Decimal("4")
+    assert order["planned_tp_qty"] == Decimal("2")
+    assert order["planned_remaining_after_all_tp"] == Decimal("2")

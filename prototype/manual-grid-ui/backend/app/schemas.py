@@ -3,27 +3,79 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class AllocationIn(BaseModel):
-    long_pct: Decimal = Field(ge=0, le=100)
-    short_pct: Decimal = Field(ge=0, le=100)
-    reserve_pct: Decimal = Field(ge=0, le=100)
+class ApiModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    @field_validator("reserve_pct")
-    @classmethod
-    def total_is_one_hundred(cls, value: Decimal, info):
-        data = info.data
-        if "long_pct" in data and "short_pct" in data and data["long_pct"] + data["short_pct"] + value != 100:
+
+class AllocationDTO(ApiModel):
+    long_pct: Decimal = Field(ge=0, le=100, validation_alias=AliasChoices("long_pct", "longPct"))
+    short_pct: Decimal = Field(ge=0, le=100, validation_alias=AliasChoices("short_pct", "shortPct"))
+    reserve_pct: Decimal = Field(ge=0, le=100, validation_alias=AliasChoices("reserve_pct", "reservePct"))
+
+    @model_validator(mode="after")
+    def total_is_one_hundred(self) -> "AllocationDTO":
+        if self.long_pct + self.short_pct + self.reserve_pct != 100:
             raise ValueError("Распределение должно составлять 100%")
+        return self
+
+
+class TPConfigDTO(ApiModel):
+    move_pct: Decimal = Field(validation_alias=AliasChoices("move_pct", "movePct"))
+    close_pct: Decimal = Field(validation_alias=AliasChoices("close_pct", "closePct"))
+
+
+class GridOrderDTO(ApiModel):
+    id: str | None = None
+    offset_pct: Decimal = Field(validation_alias=AliasChoices("offset_pct", "offsetPct"))
+    qty: Decimal = Field(gt=0)
+    filled_qty: Decimal = Field(default=Decimal(0), ge=0, validation_alias=AliasChoices("filled_qty", "filledQty"))
+    avg_fill_price: Decimal | None = Field(default=None, validation_alias=AliasChoices("avg_fill_price", "avgFill"))
+    actual_closed_qty: Decimal = Field(default=Decimal(0), ge=0, validation_alias=AliasChoices("actual_closed_qty", "actualClosedQty"))
+    tps: list[TPConfigDTO] = Field(default_factory=list)
+    note: str = ""
+
+
+class GridConfigurationDTO(ApiModel):
+    symbol: str = Field(min_length=1, max_length=30)
+    allocation: AllocationDTO
+    planning_leverage: Decimal | None = Field(default=None, gt=0, validation_alias=AliasChoices("planning_leverage", "planningLeverage", "leverage"))
+    active_long_count: int = Field(ge=1, validation_alias=AliasChoices("active_long_count", "activeLongCount"))
+    active_short_count: int = Field(ge=1, validation_alias=AliasChoices("active_short_count", "activeShortCount"))
+    long: list[GridOrderDTO]
+    short: list[GridOrderDTO]
+    fee_rate: Decimal | None = Field(default=None, ge=0, validation_alias=AliasChoices("fee_rate", "feeRate"))
+
+    @field_validator("long", "short")
+    @classmethod
+    def orders_not_empty(cls, value: list[GridOrderDTO]) -> list[GridOrderDTO]:
+        if not value:
+            raise ValueError("Сетка должна содержать хотя бы один уровень")
         return value
 
+    @model_validator(mode="after")
+    def active_counts_fit(self) -> "GridConfigurationDTO":
+        if self.active_long_count > len(self.long) or self.active_short_count > len(self.short):
+            raise ValueError("Размер активного окна не может превышать число уровней")
+        return self
 
-class RevisionIn(BaseModel):
+    def domain_payload(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", by_alias=False)
+
+
+class SaveRevisionDTO(ApiModel):
     symbol: str = Field(min_length=1, max_length=30)
     comment: str = Field(default="", max_length=500)
-    payload: dict[str, Any]
+    configuration: GridConfigurationDTO | None = None
+    payload: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def configuration_required(self) -> "SaveRevisionDTO":
+        if self.configuration is None and self.payload is None:
+            raise ValueError("configuration is required")
+        return self
 
 
 class RevisionOut(BaseModel):
