@@ -37,7 +37,19 @@ function App() {
     setSaving(false);
   };
   const planBlocked = !longGuard.allowed || !shortGuard.allowed || allocation.longPct + allocation.shortPct + allocation.reservePct !== 100;
-  useEffect(() => { const timer = setInterval(() => setAccount((a) => ({ ...a, updatedAt: new Date().toISOString() })), 15000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/state/${account.symbol}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.source === "bybit_read_only") setAccount((a) => ({ ...a, markPrice: Number(data.mark_price || a.markPrice), availableMargin: Number(data.available_margin || a.availableMargin), equity: Number(data.equity || a.equity), walletBalance: Number(data.wallet_balance || a.walletBalance), initialMargin: Number(data.initial_margin || a.initialMargin), maintenanceMargin: Number(data.maintenance_margin || a.maintenanceMargin), source: data.source, updatedAt: new Date().toISOString() }));
+      } catch { /* demo state remains visible when backend is offline */ }
+    };
+    void load();
+    const timer = setInterval(load, 15000);
+    return () => clearInterval(timer);
+  }, [account.symbol]);
   return <div className="app-shell">
     <aside className="sidebar"><div className="logo"><span>G</span><div>GRID<br/><b>CONTROL</b></div></div><div className="mode-pill"><span></span> ТЕСТОВЫЙ РЕЖИМ</div><nav><button className="active"><Settings2 size={16}/> Конструктор</button><button><Activity size={16}/> Состояние</button><button onClick={() => setHistoryOpen(true)}><History size={16}/> История</button></nav><div className="sidebar-bottom"><LockKeyhole size={15}/><span>Только чтение<br/><small>Bybit write API отключён</small></span></div></aside>
     <main className="content"><header className="topbar"><div><div className="crumb">MANUAL GRID / CONFIGURATION</div><h1>Ручная настройка сетки</h1>{notice && <div className="notice">{notice}</div>}</div><div className="top-actions"><span className="connection"><Wifi size={14}/> {account.source === "demo" ? "Демо-данные" : "Bybit read-only"}</span><button className="outline" onClick={() => setHistoryOpen(true)}><History size={16}/> История</button><button className="save" onClick={save}><Save size={16}/> {saving ? "Сохраняю…" : "Сохранить версию"}</button></div></header>

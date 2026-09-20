@@ -44,7 +44,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             positions = await client.positions("linear", symbol.upper())
             orders = await client.open_orders("linear", symbol.upper())
             ticker = await client.mark_price("linear", symbol.upper())
-            return {"symbol": symbol.upper(), "source": "bybit_read_only", "wallet": wallet, "positions": positions, "orders": orders, "ticker": ticker}
+            account = (wallet.get("list") or [{}])[0]
+            ticker_row = (ticker.get("list") or [{}])[0]
+            return {
+                "symbol": symbol.upper(), "source": "bybit_read_only",
+                "available_margin": account.get("totalAvailableBalance"),
+                "equity": account.get("totalEquity"), "wallet_balance": account.get("totalWalletBalance"),
+                "initial_margin": account.get("totalInitialMargin"), "maintenance_margin": account.get("totalMaintenanceMargin"),
+                "mark_price": ticker_row.get("markPrice") or ticker_row.get("lastPrice"),
+                "positions": positions.get("list", []), "orders": orders.get("list", []),
+            }
         except ReadOnlyBybitError as exc:
             raise HTTPException(502, str(exc)) from exc
 
