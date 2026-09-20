@@ -1,0 +1,8 @@
+import { useState } from "react";
+import { AccountState } from "../domain";
+import { money } from "../format";
+
+export function MobileAccountSnapshot({ account }: { account: AccountState }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  return <section className="mobile-account-snapshot"><div className="mobile-snapshot-grid"><div><span>Доступная маржа</span><b>{money(account.availableMargin)}</b></div><div><span>Equity</span><b>{money(account.equity)}</b></div><div><span>Баланс кошелька</span><b>{money(account.walletBalance)}</b></div></div><button className="mobile-details-toggle" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((open) => !open)}>{detailsOpen ? "Скрыть" : "Подробнее"}</button>{detailsOpen && <div className="mobile-snapshot-details"><span>Wallet <b>{money(account.walletBalance)}</b></span><span>Initial Margin <b>{money(account.initialMargin)}</b></span><span>Maintenance Margin <b>{money(account.maintenanceMargin)}</b></span><span>Источник <b>{account.source === "bybit_read_only" ? "Bybit read-only" : "нет данных"}</b></span><span>Обновлено <b>{account.updatedAt ? new Date(account.updatedAt).toLocaleTimeString("ru-RU") : "нет данных"}</b></span></div>}</section>;
+}
