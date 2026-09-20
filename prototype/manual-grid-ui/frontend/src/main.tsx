@@ -18,12 +18,12 @@ import { MobileAccountSnapshot } from "./components/MobileAccountSnapshot";
 import { MobileBottomBar } from "./components/MobileBottomBar";
 import { MobileHeader } from "./components/MobileHeader";
 import { MobileSideSwitch } from "./components/MobileSideSwitch";
-import { emptyDraft, loadDraft, loadWorkspace, removeDraft, saveDraft, setSelectedSymbol, StoredDraft, StoredWorkspace } from "./workspaceStorage";
+import { emptyDraft, loadDraft, loadWorkspace, removeDraft, saveDraft, setSelectedSymbol, storageDiagnostic, StoredDraft, StoredWorkspace } from "./workspaceStorage";
 import "./styles.css";
 import "./state.css";
 import "./mobile.css";
 
-function App() {
+export function App() {
   const [restoredWorkspace] = useState<StoredWorkspace>(() => loadWorkspace());
   const initialSymbol = restoredWorkspace.selectedSymbol || initialAccount.symbol;
   const initialDraft = restoredWorkspace.drafts[initialSymbol] ?? emptyDraft();
@@ -46,6 +46,7 @@ function App() {
   const [authoritative, setAuthoritative] = useState<CalculationResult | null>(null);
   const [mobileSide, setMobileSide] = useState<Side>(initialDraft.mobileSide);
   const [localSavedAt, setLocalSavedAt] = useState<string | null>(initialDraft.updatedAt === new Date(0).toISOString() ? null : initialDraft.updatedAt);
+  const [localSaveFailed, setLocalSaveFailed] = useState(false);
   const limitsBySide = allocationLimits(account, allocation);
   const tickSize = account.instrument?.tickSize ?? null;
   const longGuard = guard(account, allocation, "long", long, tickSize, planningLeverage);
@@ -56,13 +57,14 @@ function App() {
   const addOrder = (side: Side) => { (side === "long" ? setLong : setShort)((items) => [...items, newOrder(side, items.length + 1)]); if (side === "long" && activeLong === 0) setActiveLong(1); if (side === "short" && activeShort === 0) setActiveShort(1); };
   const removeOrder = (side: Side, id: string) => (side === "long" ? setLong : setShort)((items) => items.filter((order) => order.id !== id).map((order, index) => ({ ...order, level: index + 1 })));
   const draftSnapshot = (updatedAt = new Date().toISOString()): StoredDraft => ({ allocation, long, short, activeLong, activeShort, planningLeverage, mobileSide, page, updatedAt });
-  const saveCurrentDraft = (symbol = account.symbol) => { const updatedAt = new Date().toISOString(); saveDraft(symbol, draftSnapshot(updatedAt)); setLocalSavedAt(updatedAt); };
+  const saveCurrentDraft = (symbol = account.symbol) => { const updatedAt = new Date().toISOString(); const result = saveDraft(symbol, draftSnapshot(updatedAt)); if (result.ok) { setLocalSavedAt(updatedAt); setLocalSaveFailed(false); } else { setLocalSavedAt(null); setLocalSaveFailed(true); setNotice("Не удалось сохранить локальный черновик"); } return result; };
   const restoreDraft = (stored: StoredDraft | null) => { const next = stored ?? emptyDraft(); setAllocation(next.allocation); setLong(next.long); setShort(next.short); setActiveLong(next.activeLong); setActiveShort(next.activeShort); setPlanningLeverage(next.planningLeverage); setMobileSide(next.mobileSide); setPage(next.page ?? "constructor"); setLocalSavedAt(stored ? stored.updatedAt : null); };
   const changeSymbol = (value: string) => {
     const nextSymbol = value.toUpperCase();
     if (nextSymbol === account.symbol) return;
     saveCurrentDraft(account.symbol);
-    setSelectedSymbol(nextSymbol);
+    const selectedResult = setSelectedSymbol(nextSymbol);
+    if (!selectedResult.ok) { setLocalSavedAt(null); setLocalSaveFailed(true); setNotice("Не удалось сохранить локальный черновик"); }
     const nextDraft = loadDraft(nextSymbol);
     restoreDraft(nextDraft);
     setAuthoritative(null);
@@ -70,9 +72,11 @@ function App() {
   };
   const resetCurrentDraft = () => {
     if (typeof window !== "undefined" && !window.confirm(`Сбросить локальный черновик ${account.symbol}?`)) return;
-    removeDraft(account.symbol);
+    const result = removeDraft(account.symbol);
+    if (!result.ok) { setLocalSavedAt(null); setLocalSaveFailed(true); setNotice("Не удалось сохранить локальный черновик"); return; }
     restoreDraft(null);
     setAuthoritative(null);
+    setLocalSaveFailed(false);
     setNotice(`Локальный черновик ${account.symbol} сброшен`);
   };
   const save = async (comment?: string) => {
@@ -114,13 +118,13 @@ function App() {
     return () => clearInterval(timer);
   }, [account.symbol]);
 
-  useEffect(() => { void fetchJson<SymbolsResponse>("/api/symbols").then((data) => setSymbols(data.symbols || [])).catch(() => setSymbols([])); }, []);
+  useEffect(() => { void fetchJson<SymbolsResponse>("/api/symbols").then((data) => setSymbols(data.symbols || [])).catch(() => setSymbols([])); if (import.meta.env.DEV) console.info("Manual Grid local storage", storageDiagnostic()); }, []);
   useEffect(() => {
-    const timer = window.setTimeout(() => { const updatedAt = new Date().toISOString(); saveDraft(account.symbol, draftSnapshot(updatedAt)); setLocalSavedAt(updatedAt); }, 400);
+    const timer = window.setTimeout(() => { const updatedAt = new Date().toISOString(); const result = saveDraft(account.symbol, draftSnapshot(updatedAt)); if (result.ok) { setLocalSavedAt(updatedAt); setLocalSaveFailed(false); } else { setLocalSavedAt(null); setLocalSaveFailed(true); setNotice("Не удалось сохранить локальный черновик"); } }, 400);
     return () => window.clearTimeout(timer);
   }, [account.symbol, allocation, long, short, activeLong, activeShort, planningLeverage, mobileSide, page]);
   useEffect(() => {
-    const saveBeforeUnload = () => saveDraft(account.symbol, draftSnapshot());
+    const saveBeforeUnload = () => { const result = saveDraft(account.symbol, draftSnapshot()); if (!result.ok) { setLocalSavedAt(null); setLocalSaveFailed(true); setNotice("Не удалось сохранить локальный черновик"); } };
     window.addEventListener("pagehide", saveBeforeUnload);
     return () => window.removeEventListener("pagehide", saveBeforeUnload);
   }, [account.symbol, allocation, long, short, activeLong, activeShort, planningLeverage, mobileSide, page]);
@@ -144,4 +148,4 @@ function App() {
   return <div className="app-shell"><aside className="sidebar"><div className="logo"><span>G</span><div>СЕТКА<br/><b>КОНТРОЛЬ</b></div></div><div className="mode-pill"><span></span> {diagnostic?.environment === "testnet" ? "BYBIT TESTNET · ТОЛЬКО ЧТЕНИЕ" : diagnostic?.environment === "mainnet" ? "BYBIT MAINNET · ТОЛЬКО ЧТЕНИЕ" : "ОЖИДАНИЕ ПОДКЛЮЧЕНИЯ"}</div><nav><button className={page === "constructor" ? "active" : ""} onClick={() => setPage("constructor")}><Settings2 size={16}/> Конструктор</button><button className={page === "state" ? "active" : ""} onClick={() => setPage("state")}><Activity size={16}/> Факты аккаунта</button><button onClick={() => setHistoryOpen(true)}><History size={16}/> История</button></nav><div className="sidebar-bottom"><LockKeyhole size={15}/><span>Только чтение<br/><small>Торговые команды отключены</small></span></div></aside><main className="content"><MobileHeader account={account} symbols={symbols} onSymbol={changeSymbol} environment={diagnostic?.environment ?? null} connected={backendConnected}/><header className="topbar"><div><div className="crumb">РУЧНАЯ СЕТКА / НАСТРОЙКА</div><h1>Ручная настройка сетки</h1>{notice && <div className="notice">{notice}</div>}</div><div className="top-actions"><span className="connection"><Wifi size={14}/> {statusText}{backendConnected && diagnostic?.account_state_ready && !diagnostic.orders_ready ? " · Открытые ордера временно недоступны" : ""}</span><div className="draft-status">Локальный черновик · {localSavedAt ? `сохранено ${new Date(localSavedAt).toLocaleTimeString("ru-RU")}` : "изменения сохраняются автоматически"}<button className="draft-reset" onClick={resetCurrentDraft}>Сбросить</button></div><button className="outline" onClick={() => setHistoryOpen(true)}><History size={16}/> История</button><button className="save" onClick={() => void save()}><Save size={16}/> {saving ? "Сохраняю…" : "Сохранить версию"}</button></div></header><MobileAccountSnapshot account={account} draftSavedAt={localSavedAt} onReset={resetCurrentDraft}/><AccountBar account={account} symbols={symbols} leverage={planningLeverage} onSymbol={changeSymbol} onLeverage={setPlanningLeverage}/>{page === "constructor" ? <><AllocationPanel account={account} allocation={allocation} limits={limitsBySide} onChange={updateAllocation}/><MobileSideSwitch selected={mobileSide} onChange={setMobileSide}/><div className="mobile-side-summary"><div><b>{mobileSide === "long" ? "ЛОНГ-СЕТКА" : "ШОРТ-СЕТКА"}</b><span>{selectedOrders.length} уровней · Активное окно: {selectedActive}</span></div><strong>{selectedPlanned == null ? "—" : money(selectedPlanned)}<small>{selectedLimit == null ? "Заполните параметры" : `из ${money(selectedLimit)}`}</small></strong></div><div className={`three-columns mobile-side-${mobileSide}`}><GridColumn side="long" orders={long} active={activeLong} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={longGuard} calculation={authoritative?.long} onActive={setActiveLong} onAdd={() => addOrder("long")} onEdit={(id, patch) => editOrder("long", id, patch)} onRemove={(id) => removeOrder("long", id)}/><CenterPanel account={account} long={long} short={short} tickSize={tickSize} calculation={authoritative} blocked={planBlocked}/><GridColumn side="short" orders={short} active={activeShort} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={shortGuard} calculation={authoritative?.short} onActive={setActiveShort} onAdd={() => addOrder("short")} onEdit={(id, patch) => editOrder("short", id, patch)} onRemove={(id) => removeOrder("short", id)}/></div></> : <StateView account={account}/>}</main><MobileBottomBar statePage={page === "state"} onConstructor={() => setPage("constructor")} onState={() => setPage("state")} onHistory={() => setHistoryOpen(true)} onSave={() => void save()} saving={saving}/>{historyOpen && <HistoryDrawer items={revisions} close={() => setHistoryOpen(false)}/>} {saveDialogOpen && <SaveRevisionModal saving={saving} close={() => setSaveDialogOpen(false)} save={(comment) => void save(comment)}/>}</div>;
 }
 
-createRoot(document.getElementById("root")!).render(<App/>);
+if (document.getElementById("root")) createRoot(document.getElementById("root")!).render(<App/>);

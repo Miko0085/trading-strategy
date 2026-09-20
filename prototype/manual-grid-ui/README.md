@@ -89,3 +89,7 @@ cd frontend && npm test -- --run
 Это локальное состояние конкретного браузера и устройства: оно не синхронизируется между браузерами, устройствами или пользователями, не является PostgreSQL Revision и не заменяет сохранение версии. Кнопка «Сбросить черновик» удаляет только черновик текущего символа; после «Сохранить версию» локальный черновик сохраняется.
 
 Фактические данные Bybit (mark price, wallet/equity/margins, positions, open orders, fills, PnL, instrument и ошибки подключения), authoritative calculation result и история ревизий в `localStorage` не записываются. При восстановлении черновика factual account state заново запрашивается у backend, а calculation выполняется снова. Секреты и API credentials в localStorage не сохраняются.
+
+Каждая запись проверяется обратным чтением: версия workspace, выбранный символ и сохранённый draft должны совпасть с ожидаемыми. При недоступном или переполненном `localStorage` интерфейс показывает предупреждение и не выдаёт такую запись за подтверждённо сохранённую. В development в browser console доступна безопасная диагностика origin, ключа и списка символов без secrets.
+
+Persistence привязан к origin браузера. При использовании Cloudflare Quick Tunnel после reload должен сохраняться тот же hostname; новый `trycloudflare.com` hostname означает новый `localStorage`. Для pilot-сессии используйте стабильный tunnel URL.

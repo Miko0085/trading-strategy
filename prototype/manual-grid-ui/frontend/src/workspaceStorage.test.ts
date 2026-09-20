@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { emptyDraft, loadDraft, loadWorkspace, removeDraft, saveDraft, setSelectedSymbol, WORKSPACE_STORAGE_KEY } from "./workspaceStorage";
+import { emptyDraft, loadDraft, loadWorkspace, removeDraft, saveDraft, setSelectedSymbol, storageDiagnostic, WORKSPACE_STORAGE_KEY } from "./workspaceStorage";
 
 afterEach(() => window.localStorage.clear());
 
@@ -43,5 +43,22 @@ describe("local workspace storage", () => {
     removeDraft("BTCUSDT");
     expect(loadDraft("BTCUSDT")).toBeNull();
     expect(loadDraft("ETHUSDT")).not.toBeNull();
+  });
+
+  it("returns verified write results and exposes only safe origin diagnostics", () => {
+    expect(saveDraft("XRPUSDT", emptyDraft()).ok).toBe(true);
+    expect(setSelectedSymbol("XRPUSDT").ok).toBe(true);
+    expect(storageDiagnostic()).toMatchObject({ key: WORKSPACE_STORAGE_KEY, selectedSymbol: "XRPUSDT", draftSymbols: ["XRPUSDT"] });
+    expect(storageDiagnostic()).not.toHaveProperty("secret");
+  });
+
+  it("reports localStorage write failure without throwing", () => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => { throw new DOMException("quota", "QuotaExceededError"); };
+    try {
+      expect(saveDraft("BTCUSDT", emptyDraft())).toEqual({ ok: false, reason: "QuotaExceededError" });
+    } finally {
+      Storage.prototype.setItem = original;
+    }
   });
 });

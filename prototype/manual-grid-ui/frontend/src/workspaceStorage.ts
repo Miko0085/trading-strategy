@@ -22,6 +22,15 @@ export type StoredWorkspace = {
   drafts: Record<string, StoredDraft>;
 };
 
+export type StorageWriteResult = { ok: true } | { ok: false; reason: string };
+
+export type StorageDiagnostic = {
+  origin: string;
+  key: string;
+  selectedSymbol: string;
+  draftSymbols: string[];
+};
+
 export function emptyDraft(): StoredDraft {
   return { allocation: { longPct: null, shortPct: null, reservePct: null }, long: [], short: [], activeLong: 0, activeShort: 0, planningLeverage: null, mobileSide: "long", page: "constructor", updatedAt: new Date(0).toISOString() };
 }
@@ -70,26 +79,49 @@ export function loadWorkspace(): StoredWorkspace {
   } catch { return emptyWorkspace(); }
 }
 
-export function saveWorkspace(workspace: StoredWorkspace): void {
-  try { storage()?.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({ ...workspace, version: WORKSPACE_VERSION })); } catch { /* Safari private mode/quota: draft remains in React state. */ }
+export function saveWorkspace(workspace: StoredWorkspace): StorageWriteResult {
+  const target = storage();
+  if (!target) return { ok: false, reason: "localStorage недоступен" };
+  try {
+    target.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({ ...workspace, version: WORKSPACE_VERSION }));
+    const verified = loadWorkspace();
+    if (verified.version !== WORKSPACE_VERSION || verified.selectedSymbol !== workspace.selectedSymbol) return { ok: false, reason: "проверка localStorage не пройдена" };
+    return { ok: true };
+  } catch (error) {
+    const name = error && typeof error === "object" && "name" in error && typeof error.name === "string" ? error.name : null;
+    return { ok: false, reason: name || "ошибка записи localStorage" };
+  }
 }
 
 export function loadDraft(symbol: string): StoredDraft | null { return loadWorkspace().drafts[symbol.toUpperCase()] ?? null; }
 
-export function saveDraft(symbol: string, value: StoredDraft): void {
+export function saveDraft(symbol: string, value: StoredDraft): StorageWriteResult {
   const workspace = loadWorkspace();
-  workspace.drafts[symbol.toUpperCase()] = { allocation: value.allocation, long: value.long, short: value.short, activeLong: value.activeLong, activeShort: value.activeShort, planningLeverage: value.planningLeverage, mobileSide: value.mobileSide, page: value.page, updatedAt: value.updatedAt };
-  saveWorkspace(workspace);
+  const normalizedSymbol = symbol.toUpperCase();
+  workspace.drafts[normalizedSymbol] = { allocation: value.allocation, long: value.long, short: value.short, activeLong: value.activeLong, activeShort: value.activeShort, planningLeverage: value.planningLeverage, mobileSide: value.mobileSide, page: value.page, updatedAt: value.updatedAt };
+  const result = saveWorkspace(workspace);
+  if (!result.ok) return result;
+  return loadDraft(normalizedSymbol) ? result : { ok: false, reason: "черновик не найден после записи" };
 }
 
-export function removeDraft(symbol: string): void {
+export function removeDraft(symbol: string): StorageWriteResult {
   const workspace = loadWorkspace();
   delete workspace.drafts[symbol.toUpperCase()];
-  saveWorkspace(workspace);
+  const result = saveWorkspace(workspace);
+  if (!result.ok) return result;
+  return loadDraft(symbol) === null ? result : { ok: false, reason: "черновик не удалён после записи" };
 }
 
-export function setSelectedSymbol(symbol: string): void {
+export function setSelectedSymbol(symbol: string): StorageWriteResult {
   const workspace = loadWorkspace();
-  workspace.selectedSymbol = symbol.toUpperCase();
-  saveWorkspace(workspace);
+  const expected = symbol.toUpperCase();
+  workspace.selectedSymbol = expected;
+  const result = saveWorkspace(workspace);
+  if (!result.ok) return result;
+  return loadWorkspace().selectedSymbol === expected ? result : { ok: false, reason: "выбранный символ не подтверждён после записи" };
+}
+
+export function storageDiagnostic(): StorageDiagnostic {
+  const workspace = loadWorkspace();
+  return { origin: typeof window === "undefined" ? "server" : window.location.origin, key: WORKSPACE_STORAGE_KEY, selectedSymbol: workspace.selectedSymbol, draftSymbols: Object.keys(workspace.drafts) };
 }
