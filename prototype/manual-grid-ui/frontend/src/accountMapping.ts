@@ -1,10 +1,11 @@
-import { AccountState } from "./domain";
+import { AccountState, Side } from "./domain";
+import { AccountApiResponse } from "./types";
 
 const numberOrNull = (value: unknown): number | null => value == null ? null : Number(value);
 
-export function normalizeAccountResponse(data: any, current: AccountState): AccountState {
-  const position = (value: any) => value ? ({
-    side: value.side,
+export function normalizeAccountResponse(data: AccountApiResponse, current: AccountState): AccountState {
+  const position = (value: Record<string, unknown> | null | undefined) => value ? ({
+    side: value.side as Side,
     size: numberOrNull(value.size),
     avgEntryPrice: numberOrNull(value.avg_entry_price),
     unrealizedPnl: numberOrNull(value.unrealized_pnl),
@@ -13,10 +14,10 @@ export function normalizeAccountResponse(data: any, current: AccountState): Acco
     maintenanceMargin: numberOrNull(value.maintenance_margin),
     notional: numberOrNull(value.notional),
   }) : null;
-  const openOrders = (data.orders || []).map((item: any) => ({
-    orderId: item.order_id ?? null,
-    side: item.side ?? null,
-    status: item.status ?? null,
+  const openOrders = ((data.orders as Array<Record<string, unknown>> | undefined) || []).map((item) => ({
+    orderId: typeof item.order_id === "string" ? item.order_id : null,
+    side: typeof item.side === "string" ? item.side : null,
+    status: typeof item.status === "string" ? item.status : null,
     price: numberOrNull(item.price),
     qty: numberOrNull(item.qty),
     leavesQty: numberOrNull(item.leaves_qty),
@@ -43,7 +44,7 @@ export function normalizeAccountResponse(data: any, current: AccountState): Acco
       minOrderQty: numberOrNull(data.instrument.min_order_qty),
       minNotionalValue: numberOrNull(data.instrument.min_notional_value),
     } : null,
-    source: data.source,
+    source: data.source || current.source,
     stale: Boolean(data.stale),
     error: data.error || undefined,
     updatedAt: data.updated_at || null,
