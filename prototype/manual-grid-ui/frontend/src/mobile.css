@@ -34,3 +34,5 @@
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 900px){
   .mobile-header{padding-top:7px;padding-bottom:7px}.mobile-account-snapshot{padding:8px}.mobile-snapshot-details{grid-template-columns:repeat(3,1fr)}.mobile-bottom-bar button{min-height:42px}.content{padding-bottom:72px}.drawer{height:100dvh}
 }
+
+.mobile-draft-status{color:var(--muted);font-size:10px;margin-top:8px}.mobile-snapshot-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.mobile-reset-draft,.draft-reset{border:0;background:transparent;color:var(--muted);font-size:10px;padding:6px 0;text-decoration:underline;text-underline-offset:3px}.mobile-reset-draft{color:#ff9aab}

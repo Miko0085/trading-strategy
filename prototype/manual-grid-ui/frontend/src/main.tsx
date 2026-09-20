@@ -18,18 +18,22 @@ import { MobileAccountSnapshot } from "./components/MobileAccountSnapshot";
 import { MobileBottomBar } from "./components/MobileBottomBar";
 import { MobileHeader } from "./components/MobileHeader";
 import { MobileSideSwitch } from "./components/MobileSideSwitch";
+import { emptyDraft, loadDraft, loadWorkspace, removeDraft, saveDraft, setSelectedSymbol, StoredDraft, StoredWorkspace } from "./workspaceStorage";
 import "./styles.css";
 import "./state.css";
 import "./mobile.css";
 
 function App() {
-  const [account, setAccount] = useState<AccountState>(initialAccount);
+  const [restoredWorkspace] = useState<StoredWorkspace>(() => loadWorkspace());
+  const initialSymbol = restoredWorkspace.selectedSymbol || initialAccount.symbol;
+  const initialDraft = restoredWorkspace.drafts[initialSymbol] ?? emptyDraft();
+  const [account, setAccount] = useState<AccountState>(() => ({ ...initialAccount, symbol: initialSymbol }));
   const [symbols, setSymbols] = useState<string[]>([]);
-  const [allocation, setAllocation] = useState<Allocation>({ longPct: null, shortPct: null, reservePct: null });
-  const [long, setLong] = useState<GridOrder[]>([]);
-  const [short, setShort] = useState<GridOrder[]>([]);
-  const [activeLong, setActiveLong] = useState(0);
-  const [activeShort, setActiveShort] = useState(0);
+  const [allocation, setAllocation] = useState<Allocation>(initialDraft.allocation);
+  const [long, setLong] = useState<GridOrder[]>(initialDraft.long);
+  const [short, setShort] = useState<GridOrder[]>(initialDraft.short);
+  const [activeLong, setActiveLong] = useState(initialDraft.activeLong);
+  const [activeShort, setActiveShort] = useState(initialDraft.activeShort);
   const [revisions, setRevisions] = useState<HistoryItem[]>([]);
   const [notice, setNotice] = useState("");
   const [diagnostic, setDiagnostic] = useState<BybitStatusBase | null>(null);
@@ -37,10 +41,11 @@ function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [page, setPage] = useState<"constructor" | "state">("constructor");
-  const [planningLeverage, setPlanningLeverage] = useState<number | null>(null);
+  const [page, setPage] = useState<"constructor" | "state">(initialDraft.page ?? "constructor");
+  const [planningLeverage, setPlanningLeverage] = useState<number | null>(initialDraft.planningLeverage);
   const [authoritative, setAuthoritative] = useState<CalculationResult | null>(null);
-  const [mobileSide, setMobileSide] = useState<Side>("long");
+  const [mobileSide, setMobileSide] = useState<Side>(initialDraft.mobileSide);
+  const [localSavedAt, setLocalSavedAt] = useState<string | null>(initialDraft.updatedAt === new Date(0).toISOString() ? null : initialDraft.updatedAt);
   const limitsBySide = allocationLimits(account, allocation);
   const tickSize = account.instrument?.tickSize ?? null;
   const longGuard = guard(account, allocation, "long", long, tickSize, planningLeverage);
@@ -50,6 +55,26 @@ function App() {
   const editOrder = (side: Side, id: string, patch: Partial<GridOrder>) => (side === "long" ? setLong : setShort)((items) => items.map((order) => order.id === id ? { ...order, ...patch } : order));
   const addOrder = (side: Side) => { (side === "long" ? setLong : setShort)((items) => [...items, newOrder(side, items.length + 1)]); if (side === "long" && activeLong === 0) setActiveLong(1); if (side === "short" && activeShort === 0) setActiveShort(1); };
   const removeOrder = (side: Side, id: string) => (side === "long" ? setLong : setShort)((items) => items.filter((order) => order.id !== id).map((order, index) => ({ ...order, level: index + 1 })));
+  const draftSnapshot = (updatedAt = new Date().toISOString()): StoredDraft => ({ allocation, long, short, activeLong, activeShort, planningLeverage, mobileSide, page, updatedAt });
+  const saveCurrentDraft = (symbol = account.symbol) => { const updatedAt = new Date().toISOString(); saveDraft(symbol, draftSnapshot(updatedAt)); setLocalSavedAt(updatedAt); };
+  const restoreDraft = (stored: StoredDraft | null) => { const next = stored ?? emptyDraft(); setAllocation(next.allocation); setLong(next.long); setShort(next.short); setActiveLong(next.activeLong); setActiveShort(next.activeShort); setPlanningLeverage(next.planningLeverage); setMobileSide(next.mobileSide); setPage(next.page ?? "constructor"); setLocalSavedAt(stored ? stored.updatedAt : null); };
+  const changeSymbol = (value: string) => {
+    const nextSymbol = value.toUpperCase();
+    if (nextSymbol === account.symbol) return;
+    saveCurrentDraft(account.symbol);
+    setSelectedSymbol(nextSymbol);
+    const nextDraft = loadDraft(nextSymbol);
+    restoreDraft(nextDraft);
+    setAuthoritative(null);
+    setAccount({ ...initialAccount, symbol: nextSymbol, source: "ожидание обновления", stale: true });
+  };
+  const resetCurrentDraft = () => {
+    if (typeof window !== "undefined" && !window.confirm(`Сбросить локальный черновик ${account.symbol}?`)) return;
+    removeDraft(account.symbol);
+    restoreDraft(null);
+    setAuthoritative(null);
+    setNotice(`Локальный черновик ${account.symbol} сброшен`);
+  };
   const save = async (comment?: string) => {
     if (!authoritative) { setNotice("Сначала получите подтверждённый backend-расчёт"); return; }
     if (comment === undefined) { setSaveDialogOpen(true); return; }
@@ -91,6 +116,15 @@ function App() {
 
   useEffect(() => { void fetchJson<SymbolsResponse>("/api/symbols").then((data) => setSymbols(data.symbols || [])).catch(() => setSymbols([])); }, []);
   useEffect(() => {
+    const timer = window.setTimeout(() => { const updatedAt = new Date().toISOString(); saveDraft(account.symbol, draftSnapshot(updatedAt)); setLocalSavedAt(updatedAt); }, 400);
+    return () => window.clearTimeout(timer);
+  }, [account.symbol, allocation, long, short, activeLong, activeShort, planningLeverage, mobileSide, page]);
+  useEffect(() => {
+    const saveBeforeUnload = () => saveDraft(account.symbol, draftSnapshot());
+    window.addEventListener("pagehide", saveBeforeUnload);
+    return () => window.removeEventListener("pagehide", saveBeforeUnload);
+  }, [account.symbol, allocation, long, short, activeLong, activeShort, planningLeverage, mobileSide, page]);
+  useEffect(() => {
     if (!historyOpen) return;
     void Promise.all([fetchJson<AuditEvent[]>("/api/audit"), fetchJson<RevisionResponse[]>(`/api/revisions?symbol=${encodeURIComponent(account.symbol)}`)]).then(([events, saved]) => setRevisions(historyItems(events, saved))).catch(() => undefined);
   }, [historyOpen, account.symbol]);
@@ -107,7 +141,7 @@ function App() {
   const selectedActive = Math.max(1, mobileSide === "long" ? activeLong : activeShort);
   const selectedLimit = selectedCalculation ? Number(selectedCalculation.allocation_limit) : null;
   const selectedPlanned = selectedCalculation ? Number(selectedCalculation.full_grid_planned_margin) : null;
-  return <div className="app-shell"><aside className="sidebar"><div className="logo"><span>G</span><div>СЕТКА<br/><b>КОНТРОЛЬ</b></div></div><div className="mode-pill"><span></span> {diagnostic?.environment === "testnet" ? "BYBIT TESTNET · ТОЛЬКО ЧТЕНИЕ" : diagnostic?.environment === "mainnet" ? "BYBIT MAINNET · ТОЛЬКО ЧТЕНИЕ" : "ОЖИДАНИЕ ПОДКЛЮЧЕНИЯ"}</div><nav><button className={page === "constructor" ? "active" : ""} onClick={() => setPage("constructor")}><Settings2 size={16}/> Конструктор</button><button className={page === "state" ? "active" : ""} onClick={() => setPage("state")}><Activity size={16}/> Факты аккаунта</button><button onClick={() => setHistoryOpen(true)}><History size={16}/> История</button></nav><div className="sidebar-bottom"><LockKeyhole size={15}/><span>Только чтение<br/><small>Торговые команды отключены</small></span></div></aside><main className="content"><MobileHeader account={account} symbols={symbols} onSymbol={(symbol) => setAccount((current) => ({ ...current, symbol, stale: true, source: "ожидание обновления", updatedAt: null }))} environment={diagnostic?.environment ?? null} connected={backendConnected}/><header className="topbar"><div><div className="crumb">РУЧНАЯ СЕТКА / НАСТРОЙКА</div><h1>Ручная настройка сетки</h1>{notice && <div className="notice">{notice}</div>}</div><div className="top-actions"><span className="connection"><Wifi size={14}/> {statusText}{backendConnected && diagnostic?.account_state_ready && !diagnostic.orders_ready ? " · Открытые ордера временно недоступны" : ""}</span><button className="outline" onClick={() => setHistoryOpen(true)}><History size={16}/> История</button><button className="save" onClick={() => void save()}><Save size={16}/> {saving ? "Сохраняю…" : "Сохранить версию"}</button></div></header><MobileAccountSnapshot account={account}/><AccountBar account={account} symbols={symbols} leverage={planningLeverage} onSymbol={(symbol) => setAccount((current) => ({ ...current, symbol, stale: true, source: "ожидание обновления", updatedAt: null }))} onLeverage={setPlanningLeverage}/>{page === "constructor" ? <><AllocationPanel account={account} allocation={allocation} limits={limitsBySide} onChange={updateAllocation}/><MobileSideSwitch selected={mobileSide} onChange={setMobileSide}/><div className="mobile-side-summary"><div><b>{mobileSide === "long" ? "ЛОНГ-СЕТКА" : "ШОРТ-СЕТКА"}</b><span>{selectedOrders.length} уровней · Активное окно: {selectedActive}</span></div><strong>{selectedPlanned == null ? "—" : money(selectedPlanned)}<small>{selectedLimit == null ? "Заполните параметры" : `из ${money(selectedLimit)}`}</small></strong></div><div className={`three-columns mobile-side-${mobileSide}`}><GridColumn side="long" orders={long} active={activeLong} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={longGuard} calculation={authoritative?.long} onActive={setActiveLong} onAdd={() => addOrder("long")} onEdit={(id, patch) => editOrder("long", id, patch)} onRemove={(id) => removeOrder("long", id)}/><CenterPanel account={account} long={long} short={short} tickSize={tickSize} calculation={authoritative} blocked={planBlocked}/><GridColumn side="short" orders={short} active={activeShort} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={shortGuard} calculation={authoritative?.short} onActive={setActiveShort} onAdd={() => addOrder("short")} onEdit={(id, patch) => editOrder("short", id, patch)} onRemove={(id) => removeOrder("short", id)}/></div></> : <StateView account={account}/>}</main><MobileBottomBar statePage={page === "state"} onConstructor={() => setPage("constructor")} onState={() => setPage("state")} onHistory={() => setHistoryOpen(true)} onSave={() => void save()} saving={saving}/>{historyOpen && <HistoryDrawer items={revisions} close={() => setHistoryOpen(false)}/>} {saveDialogOpen && <SaveRevisionModal saving={saving} close={() => setSaveDialogOpen(false)} save={(comment) => void save(comment)}/>}</div>;
+  return <div className="app-shell"><aside className="sidebar"><div className="logo"><span>G</span><div>СЕТКА<br/><b>КОНТРОЛЬ</b></div></div><div className="mode-pill"><span></span> {diagnostic?.environment === "testnet" ? "BYBIT TESTNET · ТОЛЬКО ЧТЕНИЕ" : diagnostic?.environment === "mainnet" ? "BYBIT MAINNET · ТОЛЬКО ЧТЕНИЕ" : "ОЖИДАНИЕ ПОДКЛЮЧЕНИЯ"}</div><nav><button className={page === "constructor" ? "active" : ""} onClick={() => setPage("constructor")}><Settings2 size={16}/> Конструктор</button><button className={page === "state" ? "active" : ""} onClick={() => setPage("state")}><Activity size={16}/> Факты аккаунта</button><button onClick={() => setHistoryOpen(true)}><History size={16}/> История</button></nav><div className="sidebar-bottom"><LockKeyhole size={15}/><span>Только чтение<br/><small>Торговые команды отключены</small></span></div></aside><main className="content"><MobileHeader account={account} symbols={symbols} onSymbol={changeSymbol} environment={diagnostic?.environment ?? null} connected={backendConnected}/><header className="topbar"><div><div className="crumb">РУЧНАЯ СЕТКА / НАСТРОЙКА</div><h1>Ручная настройка сетки</h1>{notice && <div className="notice">{notice}</div>}</div><div className="top-actions"><span className="connection"><Wifi size={14}/> {statusText}{backendConnected && diagnostic?.account_state_ready && !diagnostic.orders_ready ? " · Открытые ордера временно недоступны" : ""}</span><div className="draft-status">Локальный черновик · {localSavedAt ? `сохранено ${new Date(localSavedAt).toLocaleTimeString("ru-RU")}` : "изменения сохраняются автоматически"}<button className="draft-reset" onClick={resetCurrentDraft}>Сбросить</button></div><button className="outline" onClick={() => setHistoryOpen(true)}><History size={16}/> История</button><button className="save" onClick={() => void save()}><Save size={16}/> {saving ? "Сохраняю…" : "Сохранить версию"}</button></div></header><MobileAccountSnapshot account={account} draftSavedAt={localSavedAt} onReset={resetCurrentDraft}/><AccountBar account={account} symbols={symbols} leverage={planningLeverage} onSymbol={changeSymbol} onLeverage={setPlanningLeverage}/>{page === "constructor" ? <><AllocationPanel account={account} allocation={allocation} limits={limitsBySide} onChange={updateAllocation}/><MobileSideSwitch selected={mobileSide} onChange={setMobileSide}/><div className="mobile-side-summary"><div><b>{mobileSide === "long" ? "ЛОНГ-СЕТКА" : "ШОРТ-СЕТКА"}</b><span>{selectedOrders.length} уровней · Активное окно: {selectedActive}</span></div><strong>{selectedPlanned == null ? "—" : money(selectedPlanned)}<small>{selectedLimit == null ? "Заполните параметры" : `из ${money(selectedLimit)}`}</small></strong></div><div className={`three-columns mobile-side-${mobileSide}`}><GridColumn side="long" orders={long} active={activeLong} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={longGuard} calculation={authoritative?.long} onActive={setActiveLong} onAdd={() => addOrder("long")} onEdit={(id, patch) => editOrder("long", id, patch)} onRemove={(id) => removeOrder("long", id)}/><CenterPanel account={account} long={long} short={short} tickSize={tickSize} calculation={authoritative} blocked={planBlocked}/><GridColumn side="short" orders={short} active={activeShort} mark={account.markPrice} tickSize={tickSize} leverage={planningLeverage} guard={shortGuard} calculation={authoritative?.short} onActive={setActiveShort} onAdd={() => addOrder("short")} onEdit={(id, patch) => editOrder("short", id, patch)} onRemove={(id) => removeOrder("short", id)}/></div></> : <StateView account={account}/>}</main><MobileBottomBar statePage={page === "state"} onConstructor={() => setPage("constructor")} onState={() => setPage("state")} onHistory={() => setHistoryOpen(true)} onSave={() => void save()} saving={saving}/>{historyOpen && <HistoryDrawer items={revisions} close={() => setHistoryOpen(false)}/>} {saveDialogOpen && <SaveRevisionModal saving={saving} close={() => setSaveDialogOpen(false)} save={(comment) => void save(comment)}/>}</div>;
 }
 
 createRoot(document.getElementById("root")!).render(<App/>);
