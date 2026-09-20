@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: manual_grid
+      POSTGRES_USER: manual_grid
+      POSTGRES_PASSWORD: manual_grid
+    ports:
+      - "5433:5432"
+    volumes:
+      - manual_grid_pgdata:/var/lib/postgresql/data
+
+volumes:
+  manual_grid_pgdata:
