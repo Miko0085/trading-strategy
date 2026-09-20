@@ -9,7 +9,7 @@ import { moveHighlight } from "./components/SymbolSelector";
 
 describe("risk meter and factual state", () => {
   it("stays neutral and visible before calculation", () => {
-    expect(riskMeterModel()).toEqual({ state: "neutral", utilization: "—", limit: "—", planned: "—", remaining: "—", excess: "—" });
+    expect(riskMeterModel()).toEqual({ state: "neutral", utilization: "—", limit: "—", activeWindow: "—", queue: "—", fullGrid: "—", remaining: "—", excess: "—" });
   });
 
   it("shows utilization and exact excess in blocked state", () => {
