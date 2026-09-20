@@ -1,166 +1,49 @@
 # Алгоритм реструктуризации сетки
 
-**Статус: В РАЗРАБОТКЕ / КЛЮЧЕВАЯ НЕФОРМАЛИЗОВАННАЯ ЧАСТЬ СТРАТЕГИИ**
+**Статус: ПОДТВЕРЖДЁН КОНТУР / ОТКРЫТЫ ТОЧНЫЕ ФОРМУЛЫ**
 
-Реструктуризация — это отдельный decision layer. Она не исполняет ордера сама и не заменяет Risk Manager.
+Реструктуризация — event-driven decision layer. Она не отправляет сделки напрямую на Bybit.
 
-Её задача: на основании текущего состояния стратегии сформировать новый план того, как изменить рабочую сетку.
+## Главный принцип
 
-## Входы реструктуризации
+Реструктуризация сохраняет factual history и меняет только будущую часть стратегии.
 
-Потенциально используются только внутренние объективные данные стратегии и аккаунта:
-- текущая Mark Price;
-- Long / Short size;
-- Strategy Lots;
-- average entry;
-- realized PnL;
-- unrealized PnL;
-- balance / equity;
-- available balance / available margin;
-- текущие Grid Revisions;
-- pending Grid Orders;
-- уже выполненные TP / разгрузки;
-- текущие allocations капитала.
+## Triggers
 
-Внешние новости, sentiment и технические индикаторы не используются.
+К классу triggers относятся события, изменяющие factual state или капитал сетки: Entry partial/full fill, TP partial/full fill, partial/full close, изменение доступного капитала, manual capital addition/withdrawal. Конкретная debounce/coalescing policy определяется при реализации.
 
-## Три логических блока
+## Capital Recalculation
 
-### 1. Capital Recalculation — перерасчёт капитала
+При каждом restructuring используется fresh account state. Настроенные Long allocation %, Short allocation % и Reserve % применяются заново к актуальной капиталовой базе.
 
-Задача блока:
-- определить актуальную капиталовую базу;
-- применить правила allocation;
-- определить рабочий капитал Long / Short;
-- сохранить резерв поддерживающей маржи;
-- учесть compound growth там, где правило подтверждено.
+Процент фиксирован до изменения настройки трейдером. Абсолютная сумма динамична. Reserve нельзя автоматически потреблять для расширения Long/Short сверх заданной policy.
 
-**Объяснение трейдера:** прибыль должна реинвестироваться по принципу сложного процента при следующем перерасчёте стратегии.
+## Dynamic Sizing
 
-Пример из объяснения трейдера:
+После расчёта текущего side budget пересчитываются только eligible future quantities.
 
-```text
-capital_before = 1000
-Long allocation = 40%
+- filled history — immutable;
+- open factual lot — factual;
+- future pending/queued qty — recalculable.
 
-после торговли capital_base = 1100
+Grid Geometry при обычном sizing recalculation сохраняется.
 
-новый Long budget
-= 40% от новой капиталовой базы
-```
+## Volume Recovery
 
-Проценты из конкретного разговора не считаются универсальной константой для всех конфигураций, пока полная формула allocation не утверждена.
+Фактическая торговая практика показывает повторный набор объёма после предыдущих разгрузок и нового движения цены. Подтверждён феномен recovery/reload inventory; открыты exact qty, связь с конкретным sold lot, recovery distance и использование realized profit.
 
-Открыто:
-- что именно входит в capital_base;
-- входит ли unrealized PnL;
-- когда происходит capital recalculation;
-- как формально задаётся margin reserve.
+## Grid Positioning / Trailing
 
-### 2. Volume Recovery — восстановление разгруженного объёма
+Trailing — отдельный блок реструктуризации. Он меняет anchor и цены неисполненной сетки при сохранении geometry proportions. Filled StrategyLots не перемещаются.
 
-**Объяснение трейдера / текущая ручная практика:** после прибыльной разгрузки проданный объём должен иметь возможность быть восстановлен по более выгодной цене.
+Открыты trigger, step, continuous/discrete behavior и policy для уже выставленных pending ExchangeOrders.
 
-Для Long — дешевле цены продажи. Для Short — зеркально.
+## Выход
 
-Открыто:
-- восстанавливается тот же coin qty или больший;
-- используется ли весь высвобождённый notional;
-- используется ли realized profit дополнительно;
-- какая цена/отступ является trigger для recovery.
+Current State → Restructuring Algorithm → RestructuringPlan → Risk Manager → ALLOW/MODIFY/DENY → ApprovedExecutionPlan → Execution Engine → Bybit.
 
-### 3. Grid Restructuring — перестройка оставшейся сетки
+RestructuringPlan должен содержать trigger, capital/allocation snapshot, geometry reference, qty changes, keep/cancel/amend/create actions, optional new anchor и target Grid Revision.
 
-Это главный пока неформализованный decision point.
+## Что ещё нельзя додумывать
 
-Нужно решить:
-- оставить существующие pending orders;
-- добавить recovery order;
-- изменить часть pending orders;
-- полностью пересчитать оставшуюся Grid;
-- сделать rebase и начать новую Grid Revision.
-
-Точная формула этого решения пока не определена.
-
-## Выход алгоритма: RestructuringPlan
-
-Реструктуризация не должна напрямую отправлять команды на Bybit.
-
-```text
-RestructuringPlan
-- state_snapshot_id
-- reason
-- capital_base
-- allocation_snapshot
-- volume_recovery_actions
-- orders_to_keep
-- orders_to_cancel
-- orders_to_amend
-- orders_to_create
-- proposed_spacing
-- proposed_qty
-- proposed_reference_price
-- target_grid_revision
-```
-
-Это концептуальная структура, не финальная схема БД.
-
-## Дальнейший pipeline
-
-```text
-Current State
-↓
-Restructuring Algorithm
-↓
-RestructuringPlan
-↓
-Risk Manager
-↓
-ALLOW / MODIFY / DENY
-↓
-Approved Execution Plan
-↓
-Execution Engine
-↓
-Bybit
-```
-
-## Что уже подтверждено как концепция
-
-- сетка не обязана быть статичной;
-- после разгрузки объём может быть повторно использован;
-- прибыль должна участвовать в будущих перерасчётах по принципу compound growth;
-- реструктуризация должна учитывать состояние аккаунта;
-- pending orders могут быть сохранены, изменены или заменены;
-- результат реструктуризации должен создавать новую Grid Revision;
-- все решения и фактические действия должны быть сопоставимы с Recorder.
-
-## Что пока нельзя автоматизировать
-
-- trigger реструктуризации;
-- новый sizing;
-- новый spacing;
-- момент rebase;
-- долю realized PnL для повторного использования;
-- использование unrealized PnL как капитала;
-- изменение Long / Short allocation;
-- risk limits.
-
-## Основные открытые вопросы
-
-1. Что является trigger реструктуризации?
-2. Что именно входит в новую capital base?
-3. Как формально работает compound allocation?
-4. Какой объём восстанавливать после разгрузки?
-5. На каком расстоянии восстанавливать проданный объём?
-6. Когда оставить старые pending orders, а когда заменить?
-7. Как меняется spacing?
-8. Как меняется sizing?
-9. Когда использовать новую Mark Price?
-10. Когда начинается новый Grid cycle?
-11. Как учитывать Long / Short imbalance?
-12. Какие ограничения должен наложить Risk Manager?
-
-## Исследовательские данные
-
-Какие данные нужно собирать для reverse engineering реструктуризации вынесено отдельно в [Наблюдения по реструктуризации](../05-research/restructuring-observations.md).
+Exact dynamic sizing formula, distribution formula, recovery formula, trailing trigger, funding/fees treatment и risk thresholds.
