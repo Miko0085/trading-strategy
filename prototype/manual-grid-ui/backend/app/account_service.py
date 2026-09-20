@@ -44,9 +44,24 @@ class AccountStateService:
             return stale
 
     async def get(self, symbol: str, *, require_private: bool = False) -> dict[str, Any]:
-        state = await self.refresh(symbol, require_private=require_private)
-        updated_at = state.get("updated_at")
+        return await self.get_fresh_or_refresh(symbol, max_age=self.stale_after_seconds, require_private=require_private)
+
+    def get_cached(self, symbol: str, *, require_private: bool = False) -> dict[str, Any] | None:
+        state = self._cache.get(symbol.upper())
+        if state is None:
+            return None
+        if require_private and state.get("source") != "bybit_read_only":
+            return None
+        return state
+
+    async def get_fresh_or_refresh(self, symbol: str, *, max_age: float | None = None, require_private: bool = False) -> dict[str, Any]:
+        state = self.get_cached(symbol, require_private=require_private)
+        updated_at = state.get("updated_at") if state else None
         age = (datetime.now(UTC) - datetime.fromisoformat(updated_at)).total_seconds() if updated_at else float("inf")
-        if state.get("stale") or age > self.stale_after_seconds:
+        if state is None or state.get("stale") or age > (self.stale_after_seconds if max_age is None else max_age):
+            state = await self.refresh(symbol, require_private=require_private)
+            updated_at = state.get("updated_at")
+            age = (datetime.now(UTC) - datetime.fromisoformat(updated_at)).total_seconds() if updated_at else float("inf")
+        if state.get("stale") or age > (self.stale_after_seconds if max_age is None else max_age):
             raise ReadOnlyBybitError("Account state is stale")
         return state

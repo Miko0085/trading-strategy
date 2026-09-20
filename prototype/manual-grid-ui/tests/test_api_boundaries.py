@@ -7,6 +7,7 @@ from app.bybit import ReadOnlyBybitClient, ReadOnlyBybitError
 from app.config import Settings
 import app.config as config_module
 from app.main import create_app
+from app.account_service import AccountStateService
 
 
 def test_calculate_endpoint_returns_decimal_normalized_result():
@@ -18,11 +19,50 @@ def test_calculate_endpoint_returns_decimal_normalized_result():
     assert response.json()["long"]["orders"][0]["tp_steps"][0]["qty"] == "2.5"
 
 
+def test_repeated_calculation_state_reads_use_fresh_account_cache():
+    class FakeClient:
+        api_key = "key"
+
+        def __init__(self):
+            self.calls = {"ticker": 0, "instrument": 0, "wallet": 0, "positions": 0, "orders": 0}
+
+        async def mark_price(self, category, symbol):
+            self.calls["ticker"] += 1
+            return {"list": [{"symbol": symbol, "markPrice": "100"}]}
+
+        async def instrument(self, category, symbol):
+            self.calls["instrument"] += 1
+            return {"list": [{"symbol": symbol, "lotSizeFilter": {"qtyStep": "1", "minOrderQty": "1", "minNotionalValue": "5"}, "priceFilter": {"tickSize": "0.1"}}]}
+
+        async def account_state(self):
+            self.calls["wallet"] += 1
+            return {"list": [{"totalWalletBalance": "100", "totalEquity": "100", "totalAvailableBalance": "80"}]}
+
+        async def positions(self, category, symbol):
+            self.calls["positions"] += 1
+            return {"list": [{"symbol": symbol, "side": "Buy", "size": "0", "positionIdx": 1}]}
+
+        async def open_orders(self, category, symbol):
+            self.calls["orders"] += 1
+            return {"list": []}
+
+    async def exercise():
+        client = FakeClient()
+        service = AccountStateService(client, stale_after_seconds=30)
+        await service.refresh("BTCUSDT", require_private=True)
+        for _ in range(10):
+            state = await service.get_fresh_or_refresh("BTCUSDT", max_age=30, require_private=True)
+            assert state["source"] == "bybit_read_only"
+        assert client.calls == {"ticker": 1, "instrument": 1, "wallet": 1, "positions": 1, "orders": 1}
+
+    asyncio.run(exercise())
+
+
 def test_health_does_not_claim_private_readiness_without_credentials():
     app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="", bybit_api_secret=""))
     with TestClient(app) as client:
         body = client.get("/api/health").json()
-    assert body == {"status": "ok", "private_integration": False, "read_only": False, "environment": "mainnet", "credential_source": "none", "private_state_ready": False}
+    assert body == {"status": "ok", "private_integration": False, "read_only": False, "environment": "mainnet", "credential_source": "none", "account_state_ready": False, "orders_ready": False, "private_state_ready": False}
 
 
 def test_read_only_validation_refuses_write_key(monkeypatch):

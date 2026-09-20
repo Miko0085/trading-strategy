@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { allocationLimits, guard, initialAccount, newOrder, prices, tpPrice } from "./domain";
 
 describe("Manual Grid domain", () => {
+  it("starts as an empty draft without unconfirmed strategy defaults", () => {
+    const order = newOrder("long", 1);
+    expect(order.offsetPct).toBeNull();
+    expect(order.qty).toBeNull();
+    expect(order.tps).toEqual([]);
+  });
+
   it("builds Long levels from current price and previous level", () => {
     const orders = [newOrder("long", 1), newOrder("long", 2)]; orders[0].offsetPct = 10; orders[1].offsetPct = 10;
     expect(prices(100, "long", orders, 0.1)).toEqual([90, 81]);

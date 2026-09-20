@@ -42,6 +42,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "wallet_status": "error",
             "positions_status": "error",
             "open_orders_status": "error",
+            "account_state_ready": False,
+            "orders_ready": False,
             "private_state_ready": False,
             "last_safe_error": "Не найден API ключ или secret" if not settings.private_configured else None,
         }
@@ -93,7 +95,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "positions_status": "Данные позиций Bybit недоступны",
                         "open_orders_status": "Ордера Bybit недоступны",
                     }[status_name]
-        diagnostic["private_state_ready"] = diagnostic["read_only_validated"] and all(diagnostic[name] == "ok" for name in ("wallet_status", "positions_status", "open_orders_status"))
+        diagnostic["account_state_ready"] = diagnostic["read_only_validated"] and all(diagnostic[name] == "ok" for name in ("wallet_status", "positions_status"))
+        diagnostic["orders_ready"] = diagnostic["read_only_validated"] and diagnostic["open_orders_status"] == "ok"
+        diagnostic["private_state_ready"] = diagnostic["account_state_ready"] and diagnostic["orders_ready"]
         app.state.private_ready = diagnostic["private_state_ready"]
         app.state.diagnostics = diagnostic
         return diagnostic
@@ -101,7 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
         diagnostic = app.state.diagnostics
-        return {"status": "ok", "private_integration": settings.private_configured, "read_only": diagnostic["read_only_validated"], "environment": settings.environment, "credential_source": settings.credential_source, "private_state_ready": diagnostic["private_state_ready"]}
+        return {"status": "ok", "private_integration": settings.private_configured, "read_only": diagnostic["read_only_validated"], "environment": settings.environment, "credential_source": settings.credential_source, "account_state_ready": diagnostic["account_state_ready"], "orders_ready": diagnostic["orders_ready"], "private_state_ready": diagnostic["private_state_ready"]}
 
     @app.get("/api/diagnostics/bybit")
     async def bybit_diagnostics(symbol: str = "BTCUSDT") -> dict[str, Any]:
@@ -126,14 +130,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def state(symbol: str) -> dict[str, Any]:
         symbol = symbol.upper()
         try:
-            return await app.state.account_service.refresh(symbol, require_private=app.state.private_ready)
+            account_ready = app.state.diagnostics["account_state_ready"] or app.state.private_ready
+            service = app.state.account_service
+            if hasattr(service, "get_fresh_or_refresh"):
+                return await service.get_fresh_or_refresh(symbol, max_age=settings.stale_after_seconds, require_private=account_ready)
+            return await service.get(symbol, require_private=account_ready)
         except ReadOnlyBybitError as exc:
             raise HTTPException(502, "Bybit state is unavailable") from exc
 
-    async def authoritative_payload(configuration: GridConfigurationDTO, client_payload: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    async def authoritative_payload(configuration: GridConfigurationDTO, client_payload: dict[str, Any] | None = None, *, force_refresh: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
         client_payload = client_payload or {}
-        if app.state.private_ready:
-            state = await app.state.account_service.get(configuration.symbol, require_private=True)
+        if app.state.diagnostics["account_state_ready"] or app.state.private_ready:
+            service = app.state.account_service
+            if force_refresh and hasattr(service, "refresh"):
+                state = await service.refresh(configuration.symbol, require_private=True)
+            elif hasattr(service, "get_fresh_or_refresh"):
+                state = await service.get_fresh_or_refresh(configuration.symbol, max_age=settings.stale_after_seconds, require_private=True)
+            else:
+                state = await service.get(configuration.symbol, require_private=True)
             if state.get("available_margin") is None or state.get("mark_price") is None:
                 raise ReadOnlyBybitError("Critical account state is unavailable")
             factual = {
@@ -176,7 +190,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raw_configuration = item.configuration.model_dump(mode="json", by_alias=False) if item.configuration else item.payload or {}
             raw_configuration["symbol"] = item.symbol
             configuration = GridConfigurationDTO.model_validate(raw_configuration)
-            factual_payload, factual = await authoritative_payload(configuration, raw_configuration)
+            factual_payload, factual = await authoritative_payload(configuration, raw_configuration, force_refresh=True)
             calculation = calculate_configuration(factual_payload, instrument=factual_payload["instrument"], account=factual_payload["account"])
             persisted = {"configuration": configuration.domain_payload(), "market_snapshot": factual, "calculation": jsonable_encoder(calculation)}
             return app.state.repository.save(item.symbol, item.comment, persisted, environment="testnet" if settings.bybit_testnet else "mainnet")
