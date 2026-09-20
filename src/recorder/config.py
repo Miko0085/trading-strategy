@@ -126,6 +126,7 @@ class Notifications(Strict):
     grid_activity: bool = True
     wallet_changes: bool = False
     technical_events: bool = False
+    funding: bool = False
 
 
 class Linking(Strict):

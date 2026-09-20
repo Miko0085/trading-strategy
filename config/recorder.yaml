@@ -35,6 +35,7 @@ telegram:
     grid_activity: true
     wallet_changes: false
     technical_events: false
+    funding: false
   event_linking:
     lookback_minutes: 10
     lookforward_minutes: 3

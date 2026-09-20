@@ -262,7 +262,9 @@ class EventIngestor:
                         "FUNDING": "Начисление funding",
                         "CLOSED_PNL": "Реализация PnL по закрытой сделке",
                     }.get(kind, kind)
-                    if kind == "EXECUTION" and Decimal(item.get("closedSize") or "0") > 0:
+                    if kind == "EXECUTION" and item.get("execType") == "Funding":
+                        summary = "Начисление funding (не сделка)"
+                    elif kind == "EXECUTION" and Decimal(item.get("closedSize") or "0") > 0:
                         summary = "Исполнение с сокращением позиции"
                     timeline_id = None
                     if kind != "TICKER" and (kind != "POSITION" or changed):

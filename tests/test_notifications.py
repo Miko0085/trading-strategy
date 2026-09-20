@@ -61,6 +61,14 @@ def test_execution_line_includes_pnl_only_when_nonzero():
     assert with_pnl == "Исполнение: Sell 50 @ 0.36, PnL 1.23"
 
 
+def test_funding_execution_labeled_distinctly_not_as_a_trade():
+    text = meaningful_summary(
+        [event("EXECUTION", side="Buy", execQty="147", execPrice="0.3996", execType="Funding")]
+    )
+    assert "не сделка" in text
+    assert "Buy 147 @ 0.3996" not in text  # never phrased like a real fill
+
+
 def test_position_open_close_increase_decrease_labels():
     def line(before_size, after_size, **after_fields):
         e = event("POSITION", size=str(after_size), avgPrice="0.3", unrealisedPnl="1", **after_fields)
@@ -132,3 +140,62 @@ async def test_notifier_collect_reports_position_open_end_to_end(store, tmp_path
     ).fetchone()
     payload = json.loads(row[0])
     assert payload["text"] == "ETHUSDT Long\nПозиция открыта: 0 → 230, средняя 0.288, uPnL 1.15"
+
+
+@pytest.mark.asyncio
+async def test_funding_settlement_does_not_notify_by_default(store, tmp_path):
+    ingest = EventIngestor(store)
+    notifier = Notifier(store, writer=None, bot=FakeBot(), policy={"executions": True})
+    await ingest.handle(
+        await captured(
+            tmp_path,
+            "execution",
+            [
+                {
+                    "symbol": "UAIUSDT",
+                    "execId": "fund-1",
+                    "orderId": "order-1",
+                    "side": "Buy",
+                    "execQty": "147",
+                    "execPrice": "0.3996",
+                    "execType": "Funding",
+                    "execTime": "1789804800000",
+                }
+            ],
+        )
+    )
+    notifier.collect()
+    assert store.db.execute("SELECT COUNT(*) FROM notification_outbox").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_funding_settlement_notifies_distinctly_when_opted_in(store, tmp_path):
+    import json
+
+    ingest = EventIngestor(store)
+    notifier = Notifier(store, writer=None, bot=FakeBot(), policy={"funding": True})
+    await ingest.handle(
+        await captured(
+            tmp_path,
+            "execution",
+            [
+                {
+                    "symbol": "UAIUSDT",
+                    "execId": "fund-2",
+                    "orderId": "order-1",
+                    "side": "Buy",
+                    "execQty": "147",
+                    "execPrice": "0.3996",
+                    "execType": "Funding",
+                    "execTime": "1789804800000",
+                }
+            ],
+        )
+    )
+    notifier.collect()
+    row = store.db.execute(
+        "SELECT payload_json FROM notification_outbox ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    text = json.loads(row[0])["text"]
+    assert "не сделка" in text
+    assert "Buy 147 @ 0.3996" not in text

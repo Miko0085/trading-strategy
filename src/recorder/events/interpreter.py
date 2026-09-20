@@ -36,6 +36,8 @@ def _order_line(item):
 
 
 def _execution_line(item):
+    if item.get("execType") == "Funding":
+        return f"начисление funding по {_show(item.get('execQty'))} @ {_show(item.get('execPrice'))} — не сделка"
     line = f"{item.get('side', '')} {_show(item.get('execQty'))} @ {_show(item.get('execPrice'))}"
     pnl = _decimal(item.get("execPnl"))
     if pnl:
@@ -129,7 +131,9 @@ class Notifier:
                 "WALLET": "wallet_changes",
             }.get(kind, "technical_events")
             data = json.loads(row["data_json"]) if row["data_json"] else {}
-            if kind == "EXECUTION" and data.get("leavesQty") not in (None, "", "0"):
+            if kind == "EXECUTION" and data.get("execType") == "Funding":
+                flag = "funding"
+            elif kind == "EXECUTION" and data.get("leavesQty") not in (None, "", "0"):
                 flag = "partial_fills"
             if self.policy.get(flag):
                 group = (
