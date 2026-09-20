@@ -2,78 +2,34 @@
 
 ## Сущности, которые нельзя смешивать
 
-```text
-GridOrderConfig
-    ↓
-ExchangeOrder
-    ↓
-Execution / Fill
-    ↓
-StrategyLot / Filled Allocation
-    ↓
-TP / Partial Close / Full Close
-```
+GridOrderConfig → ExchangeOrder → Execution / Fill → StrategyLot / Filled Allocation → TP / Close.
 
-## 1. GridOrderConfig — намерение трейдера
+## GridOrderConfig
 
-Хранит:
-- номер уровня;
-- Long / Short;
-- процентный отступ;
-- `configured_qty`;
-- TP Steps;
-- revision конфигурации.
+Намерение стратегии: side, level, geometry reference, configured_qty, planned_notional, TP Steps и Grid Revision.
 
-Это описание того, **что система собирается сделать**, а не факт исполнения.
+configured_qty — target, а не факт позиции.
 
-## 2. ExchangeOrder — реальная заявка на Bybit
+## ExchangeOrder
 
-Это конкретная биржевая заявка с собственным exchange order ID и состоянием.
+Конкретная заявка Bybit. Один GridOrderConfig может создавать несколько ExchangeOrder при amend/cancel-replace.
 
-Одна конфигурация может порождать одну или несколько биржевых заявок в течение её жизненного цикла, например после amend/cancel-replace.
+## Execution / Fill
 
-## 3. Execution / Fill — факт сделки
+Фактическая сделка на бирже. Execution является источником истины для реально набранного объёма.
 
-Execution — фактическое исполнение на бирже.
+## StrategyLot
 
-Один ExchangeOrder может иметь несколько executions. Они не создают новые Grid Orders.
+После первого fill у Grid Order появляется factual allocation.
 
-## 4. StrategyLot / Filled Allocation — фактически набранный объём стратегии
+Пример: configured_qty = 200, filled_qty = 95, open_qty = 95. TP и закрытия считаются от factual open_qty.
 
-После **первого фактического fill** система уже должна отдельно учитывать исполненный объём конкретного Grid Order, потому что на него может быть выставлена разгрузка.
+Если Entry продолжает получать fills, тот же StrategyLot обновляется.
 
-```text
-configured_qty = 1.0
+## Immutable factual history
 
-fill #1 = 0.3
-→ filled_qty = 0.3
-→ существует фактически набранный объём
-→ можно рассчитать TP на 0.3
+Новая Grid Revision может изменить будущий configured_qty queued/pending уровней, но не может переписать executions, factual average fill, filled_qty прошлого или realized close history.
 
-fill #2 = 0.2
-→ filled_qty = 0.5
-→ тот же логический StrategyLot / Filled Allocation обновляется
-```
+## Источник создания
 
-Архитектурно этот объект может иметь состояние `ACCUMULATING`, пока исходный Entry Order продолжает получать fills.
-
-Это заменяет прежнюю модель, где Strategy Lot появлялся только после полного исполнения `configured_qty`.
-
-## 5. Закрытия
-
-TP или досрочное закрытие изменяют:
-- `open_qty`;
-- `closed_qty`;
-- realized PnL конкретного объёма.
-
-## История изменений
-
-Любая правка через интерфейс должна сохранять:
-- состояние до;
-- состояние после;
-- timestamp;
-- источник изменения;
-- Grid Revision;
-- связь с ExchangeOrder / Execution / StrategyLot.
-
-Цель — всегда уметь сопоставить **намерение → исполнение → результат**.
+GridOrderConfig может быть manual или generated. После создания execution path одинаковый.
