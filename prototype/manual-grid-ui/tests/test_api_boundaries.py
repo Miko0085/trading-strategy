@@ -277,3 +277,11 @@ def test_blocked_revision_is_saved_after_server_recalculation():
         response = client.post("/api/revisions", json={"symbol": "BTCUSDT", "configuration": configuration})
     assert response.status_code == 200
     assert response.json()["validation_state"] == "BLOCKED"
+
+
+def test_revisions_have_no_update_or_delete_api():
+    app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="", bybit_api_secret=""))
+    with TestClient(app) as client:
+        assert client.put("/api/revisions/revision-id", json={"comment": "changed"}).status_code == 404
+        assert client.patch("/api/revisions/revision-id", json={"comment": "changed"}).status_code == 404
+        assert client.delete("/api/revisions/revision-id").status_code == 404

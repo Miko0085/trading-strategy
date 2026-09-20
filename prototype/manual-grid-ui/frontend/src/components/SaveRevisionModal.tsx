@@ -1,0 +1,3 @@
+import { useState } from "react";
+
+export function SaveRevisionModal({ saving, close, save }: { saving: boolean; close: () => void; save: (comment: string) => void }) { const [comment, setComment] = useState(""); return <div className="modal-backdrop" onClick={close}><div className="save-modal" onClick={(event) => event.stopPropagation()}><h3>Сохранить версию</h3><label>Комментарий к версии<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Необязательно" rows={4}/></label><div className="modal-actions"><button className="outline" onClick={close}>Отмена</button><button className="save" disabled={saving} onClick={() => save(comment)}>{saving ? "Сохраняю…" : "Сохранить"}</button></div></div></div>; }
