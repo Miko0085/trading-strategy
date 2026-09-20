@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS grids (
 CREATE TABLE IF NOT EXISTS grid_revisions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), grid_id UUID NOT NULL REFERENCES grids(id),
     revision_no INTEGER NOT NULL, payload JSONB NOT NULL, market_snapshot JSONB NOT NULL,
-    comment TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    comment TEXT NOT NULL DEFAULT '', validation_state TEXT NOT NULL DEFAULT 'BLOCKED', validation_errors JSONB NOT NULL DEFAULT '[]', created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(grid_id, revision_no)
 );
 CREATE TABLE IF NOT EXISTS grid_order_configs (
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS account_snapshots (
 );
 CREATE TABLE IF NOT EXISTS audit_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), account_id UUID REFERENCES ui_accounts(id),
-    entity TEXT NOT NULL, action TEXT NOT NULL, before_payload JSONB, after_payload JSONB,
+    entity TEXT NOT NULL, entity_type TEXT NOT NULL DEFAULT 'grid_revision', entity_id TEXT, side TEXT, action TEXT NOT NULL, before_payload JSONB, after_payload JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS execution_plans (

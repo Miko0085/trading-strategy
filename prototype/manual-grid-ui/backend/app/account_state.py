@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+
+def pick(data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in data and data[key] not in (None, ""):
+            return data[key]
+    return None
+
+
+def normalize_instrument(result: dict[str, Any]) -> dict[str, Any]:
+    item = (result.get("list") or [{}])[0]
+    lot = item.get("lotSizeFilter") or {}
+    price = item.get("priceFilter") or {}
+    return {"symbol": item.get("symbol"), "tick_size": pick(price, "tickSize"), "qty_step": pick(lot, "qtyStep"), "min_order_qty": pick(lot, "minOrderQty"), "min_notional_value": pick(lot, "minNotionalValue")}
+
+
+def normalize_positions(result: dict[str, Any], mark_price: str | None) -> list[dict[str, Any]]:
+    normalized = []
+    for item in result.get("list", []):
+        position_idx = str(item.get("positionIdx", ""))
+        raw_side = item.get("side")
+        side = "long" if raw_side in ("Buy", "Long") or position_idx == "1" else "short" if raw_side in ("Sell", "Short") or position_idx == "2" else None
+        if side is None:
+            continue
+        size = pick(item, "size")
+        notional = str(Decimal(str(mark_price)) * Decimal(str(size))) if mark_price is not None and size is not None else None
+        normalized.append({"side": side, "symbol": item.get("symbol"), "size": size, "avg_entry_price": pick(item, "avgPrice", "avgEntryPrice"), "unrealized_pnl": pick(item, "unrealisedPnl", "unrealizedPnl"), "leverage": item.get("leverage"), "initial_margin": pick(item, "positionIM", "positionIm"), "maintenance_margin": pick(item, "positionMM", "positionMm"), "notional": notional, "position_idx": item.get("positionIdx")})
+    return normalized
+
+
+def normalize_orders(result: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{"order_id": item.get("orderId"), "symbol": item.get("symbol"), "side": item.get("side"), "status": item.get("orderStatus"), "price": item.get("price"), "qty": item.get("qty"), "leaves_qty": item.get("leavesQty"), "position_idx": item.get("positionIdx")} for item in result.get("list", [])]
+
+
+def normalize_account(wallet: dict[str, Any], positions: dict[str, Any], orders: dict[str, Any], ticker: dict[str, Any], instrument: dict[str, Any], source: str) -> dict[str, Any]:
+    account = (wallet.get("list") or [{}])[0]
+    ticker_row = (ticker.get("list") or [{}])[0]
+    mark = pick(ticker_row, "markPrice", "lastPrice")
+    position_rows = normalize_positions(positions, mark)
+    long_position = next((item for item in position_rows if item["side"] == "long"), None)
+    short_position = next((item for item in position_rows if item["side"] == "short"), None)
+    long_size = Decimal(str(long_position["size"])) if long_position and long_position["size"] is not None else None
+    short_size = Decimal(str(short_position["size"])) if short_position and short_position["size"] is not None else None
+    gross = Decimal(str(mark)) * (long_size + short_size) if mark is not None and long_size is not None and short_size is not None else None
+    net = Decimal(str(mark)) * (long_size - short_size) if mark is not None and long_size is not None and short_size is not None else None
+    return {"source": source, "symbol": ticker_row.get("symbol") or instrument.get("symbol"), "mark_price": mark, "wallet_balance": pick(account, "totalWalletBalance"), "equity": pick(account, "totalEquity"), "available_margin": pick(account, "totalAvailableBalance"), "initial_margin": pick(account, "totalInitialMargin"), "maintenance_margin": pick(account, "totalMaintenanceMargin"), "positions": position_rows, "long": long_position, "short": short_position, "gross_exposure": str(gross) if gross is not None else None, "net_exposure": str(net) if net is not None else None, "orders": normalize_orders(orders), "instrument": instrument}
