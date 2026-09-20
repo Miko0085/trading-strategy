@@ -2,58 +2,22 @@
 
 **Статус: БАЗОВАЯ ДОМЕННАЯ МОДЕЛЬ**
 
-Нужно различать жизненный цикл **GridOrderConfig** и жизненный цикл **ExchangeOrder**.
+## GridOrderConfig
 
-## GridOrderConfig — логический уровень стратегии
+CONFIGURED → ACTIVE → PARTIALLY_FILLED → FILLED. Возможны DISABLED/REMOVED или superseded by new Grid Revision.
 
-Пример состояний:
+## ExchangeOrder
 
-```text
-CONFIGURED
-→ ACTIVE
-→ PARTIALLY_FILLED
-→ FILLED
+New → PartiallyFilled → Filled; New/PartiallyFilled → Cancelled; New → Rejected.
 
-или
+## Partial fill invariant
 
-CONFIGURED / ACTIVE
-→ DISABLED / REMOVED
-```
+После первого Execution factual position allocation уже существует.
 
-Точные enum-названия могут измениться при реализации.
+Пример: configured_qty = 200, filled_qty = 95, remaining entry qty = 105. StrategyLot работает от 95. Оставшиеся 105 не считаются позицией.
 
-GridOrderConfig хранит намерение стратегии и не равен биржевой заявке.
+Если новая revision меняет target future qty, уже произошедшие executions остаются неизменными.
 
-## ExchangeOrder — реальная заявка Bybit
+## Главное разделение
 
-Типовой жизненный цикл:
-
-```text
-New
-→ PartiallyFilled
-→ Filled
-
-New / PartiallyFilled
-→ Cancelled
-
-New
-→ Rejected
-```
-
-Один GridOrderConfig может иметь несколько ExchangeOrder во времени, например при cancel-replace.
-
-Один ExchangeOrder может иметь несколько Execution / Fill.
-
-## Главное правило
-
-```text
-GridOrderConfig ≠ ExchangeOrder ≠ Execution
-```
-
-- GridOrderConfig — что хотели сделать;
-- ExchangeOrder — что отправили на биржу;
-- Execution — что реально исполнилось.
-
-После первого Execution появляется фактически набранный объём стратегии, даже если Entry ExchangeOrder ещё не Filled полностью.
-
-Отменить можно оставшуюся неисполненную часть ExchangeOrder. Уже случившиеся executions не отменяются.
+GridOrderConfig ≠ ExchangeOrder ≠ Execution ≠ StrategyLot.
