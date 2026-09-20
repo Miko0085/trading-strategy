@@ -205,6 +205,37 @@ def test_private_state_ready_requires_read_only_wallet_positions_and_orders(monk
     assert "secret" not in str(health).lower()
 
 
+def test_orders_failure_keeps_private_account_state_available(monkeypatch):
+    async def accept_validation(self):
+        return {"readOnly": 1}
+
+    async def wallet(self):
+        return {"list": [{"totalWalletBalance": "100", "totalEquity": "101", "totalAvailableBalance": "80"}]}
+
+    async def positions(self, category, symbol):
+        return {"list": [{"symbol": symbol, "side": "Buy", "size": "2", "avgPrice": "90", "positionIdx": 1}]}
+
+    async def orders(self, category, symbol):
+        raise ReadOnlyBybitError("orders unavailable")
+
+    monkeypatch.setattr(ReadOnlyBybitClient, "validate_read_only", accept_validation)
+    monkeypatch.setattr(ReadOnlyBybitClient, "account_state", wallet)
+    monkeypatch.setattr(ReadOnlyBybitClient, "positions", positions)
+    monkeypatch.setattr(ReadOnlyBybitClient, "open_orders", orders)
+    app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="key", bybit_api_secret="secret"))
+    with TestClient(app) as client:
+        diagnostics = client.get("/api/diagnostics/bybit?symbol=BTCUSDT").json()
+        state = client.get("/api/state/BTCUSDT").json()
+    assert diagnostics["account_state_ready"] is True
+    assert diagnostics["orders_ready"] is False
+    assert diagnostics["private_state_ready"] is False
+    assert state["source"] == "bybit_read_only"
+    assert state["wallet_balance"] == "100"
+    assert state["long"]["size"] == "2"
+    assert state["orders_available"] is False
+    assert state["orders"] == []
+
+
 def test_private_calculation_ignores_forged_browser_facts():
     app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="", bybit_api_secret=""))
 

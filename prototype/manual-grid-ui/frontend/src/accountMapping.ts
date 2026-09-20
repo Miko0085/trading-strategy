@@ -34,6 +34,8 @@ export function normalizeAccountResponse(data: any, current: AccountState): Acco
     longPosition: position(data.long),
     shortPosition: position(data.short),
     openOrders,
+    ordersAvailable: data.orders_available !== false,
+    ordersError: data.orders_error || null,
     instrument: data.instrument ? {
       symbol: data.instrument.symbol,
       tickSize: numberOrNull(data.instrument.tick_size),
