@@ -2,57 +2,18 @@
 
 **Статус: ПОДТВЕРЖДЁННАЯ БАЗОВАЯ МЕХАНИКА**
 
-Полная логическая сетка может содержать больше уровней, чем одновременно выставлено на Bybit.
+Полная logical Grid может содержать произвольное количество уровней. На Bybit одновременно держится только configurable subset.
 
-## Модель
+Пример: Full Grid #1..#20, Active Window = 3, на Bybit материализованы #1 #2 #3.
 
-```text
-Полная логическая Grid
-Order #1
-Order #2
-Order #3
-...
-Order #20
-        ↓
-Active Order Window
-        ↓
-Exchange Orders на Bybit
-```
+## Связь с dynamic sizing
 
-Трейдер задаёт, сколько Entry Grid Orders одновременно держать активными, например 3, 4 или 5.
+Queued, ещё не активированные уровни могут получить новый qty после restructuring. Уже выставленный, но неисполненный ExchangeOrder может потребовать amend/cancel-replace, если новая revision меняет его target.
 
-Число не является универсальной константой.
+## Связь с geometry
 
-## Пример
+Active Window не меняет геометрию. Оно только решает, какие GridOrderConfig сейчас материализованы на бирже.
 
-```text
-active_order_count = 5
+## Связь с trailing
 
-На Bybit:
-#1 #2 #3 #4 #5
-
-#1 исполнился
-↓
-система активирует #6
-
-На Bybit снова:
-#2 #3 #4 #5 #6
-```
-
-## Отдельная политика, а не State Machine
-
-Active Order Window не является состоянием StrategyLot или ExchangeOrder.
-
-Это политика активации GridOrderConfig.
-
-Концептуально она должна хранить как минимум:
-- `active_order_count`;
-- порядок активации уровней;
-- событие, после которого активируется следующий уровень;
-- текущий набор активных Grid Orders.
-
-## Граница с реструктуризацией
-
-Базовый алгоритм просто сдвигает активное окно по существующей Grid Revision.
-
-Алгоритм реструктуризации может создать новую Grid Revision, после чего Active Order Window начинает работать уже по новой конфигурации.
+Если trailing создаёт новую pending geometry, Active Window reconciliate текущие ExchangeOrders с новой revision. Filled StrategyLots в trailing не участвуют.

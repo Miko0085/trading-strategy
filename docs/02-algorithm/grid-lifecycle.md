@@ -2,61 +2,18 @@
 
 **Статус: БАЗОВАЯ ДОМЕННАЯ МОДЕЛЬ**
 
-Grid — долговечная сущность стратегии для конкретной стороны Long или Short.
+Grid — долгоживущая сущность стратегии для конкретного symbol и side.
 
-Grid не нужно путать с её конкретной версией настроек.
+## Grid Cycle
 
-## Grid
-
-Концептуальный lifecycle:
-
-```text
-CREATED
-→ CONFIGURED
-→ ACTIVE
-→ PAUSED?        [ещё не подтверждено]
-→ ENDED / CLOSED? [ещё не подтверждено]
-```
-
-Точные конечные состояния будут утверждены позже.
+Внутри Grid существует цикл с собственной geometry и anchor. Grid Cycle фиксирует geometry, reference/anchor, sizing policy, allocation policy, enabled side и revisions.
 
 ## Grid Revision
 
-Каждое существенное изменение конфигурации создаёт новую immutable revision:
+Любое существенное изменение будущей конфигурации создаёт immutable revision. Причины: dynamic qty recalculation, trailing/rebase, manual parameter edit, изменение allocation, Active Window или TP configuration.
 
-```text
-Grid
-├── Revision #1
-├── Revision #2
-├── Revision #3
-└── ...
-```
+Revision не меняет прошлую exchange reality.
 
-Grid Revision должна позволять восстановить:
-- reference Mark Price;
-- GridOrderConfig;
-- configured_qty;
-- TP Steps;
-- active order window;
-- состояние параметров до и после изменения;
-- причину изменения, если она известна.
+Пример: Revision #1 initial → Revision #2 qty recalculation → Revision #3 trailing.
 
-## Связь с реструктуризацией
-
-Реструктуризация **не создаёт новую историю реальности задним числом**.
-
-Она формирует новый `RestructuringPlan`, результатом которого после подтверждения становится новая Grid Revision.
-
-```text
-Current Grid Revision
-        ↓
-RestructuringPlan
-        ↓
-Risk Check
-        ↓
-Approved changes
-        ↓
-New Grid Revision
-```
-
-Дальше базовый Execution Engine механически исполняет уже новую Grid Revision.
+Новый Geometry Cycle нужен, когда явно заменяется geometry, а не просто двигается её anchor.

@@ -1,70 +1,26 @@
 # Базовый алгоритм исполнения сетки
 
-**Статус: ПОДТВЕРЖДЁННАЯ МЕХАНИКА**
+**Статус: ПОДТВЕРЖДЁННЫЙ МЕХАНИЧЕСКИЙ КОНТУР**
 
-Этот алгоритм отвечает только на вопрос:
+Алгоритм исполняет заданную конфигурацию и поддерживает динамическую будущую часть сетки.
 
-> Как механически исполнить уже заданную трейдером сетку?
+## Поток запуска
 
-Он не решает, когда реструктурировать стратегию и какой новый капитал выделять.
+Select symbol → read factual Position Mode → validate enabled sides → read fresh account state → apply configured Long/Short/Reserve allocation → build Manual or Generated Grid → freeze Grid Geometry for current cycle → generate initial sizing → validate instrument limits → create Grid Revision → activate Active Order Window.
 
-## Базовый поток
+## Поток исполнения
 
-```text
-Запуск стратегии
-↓
-Зафиксировать текущую Mark Price
-↓
-Построить логическую Long Grid / Short Grid
-↓
-Для каждого Grid Order задать:
-- процентный отступ
-- configured_qty
-- TP Steps
-↓
-Активировать заданное окно лимитных ордеров
-↓
-Отправить активные ExchangeOrders на Bybit
-↓
-Получать Execution / Fill
-↓
-После первого fill:
-- создать/обновить Filled Allocation / StrategyLot
-- пересчитать filled_qty
-- пересчитать actual average entry
-- синхронизировать TP на фактически исполненный объём
-↓
-По мере исполнения уровней
-активировать следующие Grid Orders
-↓
-При TP / manual close
-обновлять open_qty / closed_qty / realized PnL
-↓
-Продолжать исполнение текущей Grid Revision
-```
+ExchangeOrder → Execution/Fill → update StrategyLot → sync TP from factual open_qty → restructuring trigger → fresh account state → recalculate eligible future qty → optional trailing/repositioning → new Grid Revision → continue Active Window.
 
-## Что относится к этому алгоритму
+## Инварианты
 
-- расчёт уровней уже заданной сетки;
-- Active Order Window;
-- связь GridOrderConfig → ExchangeOrder → Execution;
-- расчёт фактически исполненного объёма;
-- фактическая средняя цена;
-- лимитные TP;
-- поддержание активного окна;
-- механическое применение текущей Grid Revision.
+- filled history immutable;
+- TP/close только от factual open_qty;
+- dynamic sizing меняет будущие qty, а не прошлые fills;
+- allocation guard применяется при каждом перерасчёте;
+- trailing не деформирует geometry текущего цикла;
+- Position Mode проверяется per symbol.
 
-## Что сюда не относится
+## Что алгоритм не делает сам
 
-- решение о реструктуризации;
-- compound capital recalculation;
-- выбор нового sizing;
-- перераспределение Long/Short;
-- выбор новой reference price при rebase;
-- риск-лимиты;
-- ручное вмешательство через внешний терминал;
-- reconciliation и audit infrastructure.
-
-Реструктуризация описана отдельно: [Алгоритм реструктуризации](restructuring-algorithm.md).
-
-Политика активного окна описана отдельно: [Активное окно ордеров](active-order-window.md).
+Он не прогнозирует направление, не использует внешние сигналы, не придумывает allocation/risk limits, не переключает Bybit Position Mode и не переписывает реальные fills.

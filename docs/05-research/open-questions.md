@@ -1,36 +1,39 @@
 # Открытые вопросы
 
-**Статус: ОТКРЫТЫЙ ВОПРОС**
+## Geometry
 
-## Base Grid / Execution
+1. Какая точная математическая функция distribution coefficient?
+2. Как нормализовать глубину так, чтобы последний уровень точно соответствовал configured depth?
+3. Когда создаётся новая Geometry, а когда достаточно сдвинуть anchor?
 
-1. Как синхронизировать TP при новых partial fills одного Entry Grid Order: amend существующих TP или создавать дополнительные?
-2. Можно ли менять configured_qty входного Grid Order после первого fill?
+## Dynamic Sizing
 
-## Restructuring Algorithm
+4. Какая точная формула перераспределения side budget между оставшимися уровнями?
+5. Как Martingale curve масштабируется после изменения capital base?
+6. Какие конкретные Bybit account fields являются canonical capital base?
+7. Как учитывать funding и fees?
 
-3. Что именно является trigger реструктуризации?
-4. Что входит в capital_base перед новым перерасчётом?
-5. Как формально работает compound allocation?
-6. Как задаётся margin reserve?
-7. Какой объём восстанавливать после прибыльной разгрузки: тот же coin qty или объём на весь освобождённый капитал?
-8. На каком расстоянии/условии выставлять recovery order?
-9. Когда оставить существующие pending orders, а когда перестроить их?
-10. Когда происходит полный rebase на новую Mark Price?
-11. Когда текущая Grid Revision продолжается, а когда начинается новый Grid cycle?
-12. Как учитывать realized PnL?
-13. Использовать ли unrealized PnL в capital_base?
-14. Как формально задаётся Long / Short capital allocation?
+## Partial fills / TP
 
-## Strategy Capital
+8. При новых fills amend существующие TP или создавать дополнительные?
+9. Как округлять TP qty по qtyStep и куда относить residual?
+10. Что делать с Entry configured_qty, если target меняется после partial fill?
 
-15. Какой минимальный капитал стратегии нужен для запуска одной монеты сверх биржевого minOrderQty/minNotionalValue?
+## Recovery
 
-## Future Risk Manager
+11. Какой exact qty восстанавливать после unload?
+12. Recovery связан с конкретным sold lot или с общим inventory?
+13. Как рассчитывается recovery price/distance?
 
-16. Какие margin/equity/exposure limits использовать?
-17. Какой минимальный margin reserve обязателен?
-18. Когда Risk Manager должен ALLOW / MODIFY / DENY?
-19. Какие emergency actions разрешены?
+## Trailing
 
-Эти вопросы нельзя заполнять предположениями.
+14. Что является trigger?
+15. Какой trailing step?
+16. Непрерывный или дискретный trailing?
+17. Можно ли двигать уже выставленные, но неисполненные ExchangeOrders, или только queued levels?
+
+## Risk
+
+18. Какой минимальный Reserve обязателен?
+19. Какие account-level exposure/drawdown/liquidation-buffer limits?
+20. Какие emergency actions разрешены Risk Manager?

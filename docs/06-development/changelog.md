@@ -1,41 +1,29 @@
 # История изменений документации
 
+## 2026-09-21 — динамическая сетка и эмпирическая валидация
+
+- Grid Geometry, Grid Sizing и Grid Positioning/Trailing разделены как независимые механизмы.
+- Добавлен Generated Grid: N, depth, first offset и distribution coefficient.
+- Добавлен initial Martingale sizing как отдельный от geometry механизм.
+- Зафиксировано: относительные пропорции geometry текущего цикла сохраняются.
+- Зафиксировано: future unexecuted qty динамически пересчитываются.
+- Long/Short/Reserve allocation теперь применяется на каждом restructuring event.
+- Position Mode описан per symbol: Hedge / One-Way / Unknown.
+- TP/close для крупных partial fills рассчитывается только от factual filled/open qty.
+- Усилены instrument constraints: qtyStep, minOrderQty, minNotionalValue, tickSize.
+- Trailing описан как перенос pending geometry без изменения filled StrategyLots.
+- Добавлен исследовательский документ по фактической торговле 13–20 сентября 2026.
+- LSKUSDT зафиксирован как наиболее полная выборка периода.
+- Паттерны около +9–12% / около половины lot оставлены сильной гипотезой, а не универсальным правилом.
+- Tail-risk и account-level risk усилены фактическим liquidation наблюдением.
+
 ## 2026-09-19 — архитектурная реорганизация
 
 - Разделены Strategy Decision, Risk Manager, Execution Engine и Recorder.
-- Базовый Grid Algorithm очищен от decision/risk/platform responsibilities.
-- Active Order Window вынесен в отдельную execution policy.
+- Active Order Window вынесен в execution policy.
 - GridOrderConfig и ExchangeOrder получили раздельные lifecycle.
-- Grid отделён от Grid Revision.
-- StrategyLot/Filled Allocation теперь появляется после первого фактического fill.
-- Restructuring Algorithm перестроен вокруг Capital Recalculation → Volume Recovery → Grid Restructuring → RestructuringPlan.
-- Research capture реструктуризации вынесен в отдельный документ.
-- Data Model расширен RestructuringPlan, RiskDecision, ApprovedExecutionPlan и ExecutionCommand.
-- Roadmap разделён на Domain Model, Execution Core, Restructuring Research, Risk Manager и Controlled Automation.
-
-
-## 2026-09-19 — уточнение механики после разговора с трейдером
-
-- Исправлена прежняя интерпретация partial fill: TP теперь считается от фактически исполненного объёма filled_qty, а не обязательно ждёт полного configured_qty.
-- Зафиксировано, что несколько fills одного Grid Order остаются одной логической единицей стратегии.
-- Подтверждено: обычный Take Profit выставляется заранее реальными лимитными заявками на Bybit.
-- Подтверждено: Market-закрытие не является базовым способом TP.
-- Зафиксирован текущий базовый интерфейс расчёта сетки через индивидуальные процентные отступы.
-- Подтверждено: первая цена считается от Mark Price в момент запуска стратегии.
-- Добавлена механика настраиваемого активного окна: на Bybit постоянно поддерживается заданное число активных лимитных Grid Orders, а следующие уровни хранятся внутри платформы.
-- Добавлена гипотеза будущей реструктуризации: повторное размещение разгруженного объёма на более выгодных уровнях для улучшения средней цены.
-- Добавлена гипотеза использования общего доступного баланса и PnL как будущего входа для реструктуризации.
-- Сокращён список открытых вопросов до действительно неясных технических и математических мест.
-
-## 2026-09-19 — русификация
-
-- Русский язык закреплён как основной язык публичной документации.
-- Навигация GitBook переведена на русский.
-- Добавлены русские определения технических терминов.
-- Добавлено разделение GridOrderState / StrategyLotState / TPStepState.
-- Добавлена обязательная история Grid Revision.
-- Добавлена политика реакции на ручное вмешательство через терминал Bybit.
-- Убрана лишняя привязка публичной документации к одному конкретному активу и короткому периоду наблюдений.
+- StrategyLot/Filled Allocation появляется после первого фактического fill.
+- Restructuring Algorithm формирует RestructuringPlan.
 
 ## 2026-09-18
 
