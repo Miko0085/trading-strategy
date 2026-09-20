@@ -50,6 +50,16 @@ Backend получает factual `mark_price`, `totalAvailableBalance` и instru
 
 Backend при наличии ключа вызывает только `GET /v5/user/query-api` перед private integration и отказывается запускаться, если `readOnly != 1`. В коде отсутствуют place/amend/cancel/close/write методы.
 
+Диагностика подключения без секретов:
+
+```bash
+curl http://localhost:8000/api/health
+curl 'http://localhost:8000/api/diagnostics/bybit?symbol=BTCUSDT'
+curl http://localhost:8000/api/state/BTCUSDT
+```
+
+При ошибке read-only проверки backend продолжает запускаться с `private_state_ready=false`; public market endpoints остаются доступными. `/api/diagnostics/bybit` показывает только наличие credentials, источник bundle, окружение и статусы query-api/wallet/positions/open-orders.
+
 ## Migration
 
 ```bash

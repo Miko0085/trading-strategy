@@ -22,7 +22,7 @@ def test_health_does_not_claim_private_readiness_without_credentials():
     app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="", bybit_api_secret=""))
     with TestClient(app) as client:
         body = client.get("/api/health").json()
-    assert body == {"status": "ok", "private_integration": False, "read_only": False, "environment": "mainnet"}
+    assert body == {"status": "ok", "private_integration": False, "read_only": False, "environment": "mainnet", "credential_source": "none", "private_state_ready": False}
 
 
 def test_read_only_validation_refuses_write_key(monkeypatch):
@@ -67,7 +67,7 @@ def test_env_precedence_uses_module_settings_and_root_only_for_bybit(monkeypatch
     repository_root = tmp_path / "repository"
     module_root.mkdir()
     repository_root.mkdir()
-    (module_root / ".env").write_text("DATABASE_URL=module-db\nBYBIT_API_KEY=module-key\n", encoding="utf-8")
+    (module_root / ".env").write_text("DATABASE_URL=module-db\nBYBIT_API_KEY=module-key\nBYBIT_API_SECRET=module-secret\nBYBIT_TESTNET=false\n", encoding="utf-8")
     (repository_root / ".env").write_text("DATABASE_URL=root-db\nBYBIT_API_KEY=root-key\nBYBIT_API_SECRET=root-secret\nBYBIT_TESTNET=true\n", encoding="utf-8")
     for name in ("DATABASE_URL", "BYBIT_API_KEY", "BYBIT_API_SECRET", "BYBIT_TESTNET", "MANUAL_GRID_ALLOWED_ORIGINS"):
         monkeypatch.delenv(name, raising=False)
@@ -76,8 +76,93 @@ def test_env_precedence_uses_module_settings_and_root_only_for_bybit(monkeypatch
     settings = Settings()
     assert settings.database_url == "module-db"
     assert settings.bybit_api_key == "module-key"
-    assert settings.bybit_api_secret == "root-secret"
-    assert settings.bybit_testnet is True
+    assert settings.bybit_api_secret == "module-secret"
+    assert settings.bybit_testnet is False
+
+
+def test_repository_root_is_derived_from_config_file_location():
+    expected_root = Path(__file__).resolve().parents[3]
+    assert config_module.REPOSITORY_ROOT == expected_root
+    assert (config_module.REPOSITORY_ROOT / ".git").exists()
+    assert config_module.MODULE_ROOT == config_module.REPOSITORY_ROOT / "prototype" / "manual-grid-ui"
+
+
+def test_blank_module_credentials_fall_back_to_complete_root_bundle(monkeypatch, tmp_path):
+    module_root = tmp_path / "module"
+    repository_root = tmp_path / "repository"
+    module_root.mkdir()
+    repository_root.mkdir()
+    (module_root / ".env").write_text("BYBIT_API_KEY=\nBYBIT_API_SECRET=\nBYBIT_TESTNET=false\n", encoding="utf-8")
+    (repository_root / ".env").write_text("BYBIT_API_KEY=root-key\nBYBIT_API_SECRET=root-secret\nBYBIT_TESTNET=true\n", encoding="utf-8")
+    for name in ("BYBIT_API_KEY", "BYBIT_API_SECRET", "BYBIT_TESTNET"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(config_module, "MODULE_ROOT", module_root)
+    monkeypatch.setattr(config_module, "REPOSITORY_ROOT", repository_root)
+    settings = Settings()
+    assert (settings.bybit_api_key, settings.bybit_api_secret, settings.bybit_testnet, settings.credential_source) == ("root-key", "root-secret", True, "root_env")
+
+
+def test_process_bundle_has_highest_priority_and_owns_environment(monkeypatch, tmp_path):
+    module_root = tmp_path / "module"
+    repository_root = tmp_path / "repository"
+    module_root.mkdir()
+    repository_root.mkdir()
+    (module_root / ".env").write_text("BYBIT_API_KEY=module-key\nBYBIT_API_SECRET=module-secret\nBYBIT_TESTNET=false\n", encoding="utf-8")
+    (repository_root / ".env").write_text("BYBIT_API_KEY=root-key\nBYBIT_API_SECRET=root-secret\nBYBIT_TESTNET=true\n", encoding="utf-8")
+    monkeypatch.setenv("BYBIT_API_KEY", "process-key")
+    monkeypatch.setenv("BYBIT_API_SECRET", "process-secret")
+    monkeypatch.setenv("BYBIT_TESTNET", "false")
+    monkeypatch.setattr(config_module, "MODULE_ROOT", module_root)
+    monkeypatch.setattr(config_module, "REPOSITORY_ROOT", repository_root)
+    settings = Settings()
+    assert (settings.bybit_api_key, settings.bybit_api_secret, settings.bybit_testnet, settings.credential_source) == ("process-key", "process-secret", False, "process_env")
+
+
+def test_failed_read_only_validation_keeps_backend_alive_and_public_api_available(monkeypatch):
+    async def reject_validation(self):
+        raise ReadOnlyBybitError("remote failure")
+
+    monkeypatch.setattr(ReadOnlyBybitClient, "validate_read_only", reject_validation)
+    app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="key", bybit_api_secret="secret", bybit_testnet=False))
+    with TestClient(app) as client:
+        health = client.get("/api/health").json()
+        diagnostics = client.get("/api/diagnostics/bybit").json()
+    assert health["status"] == "ok"
+    assert health["private_state_ready"] is False
+    assert diagnostics["read_only_validated"] is False
+    assert diagnostics["query_api_status"] == "error"
+    assert diagnostics["api_key_present"] is True
+    assert diagnostics["api_secret_present"] is True
+    assert "remote failure" not in str(diagnostics).lower()
+
+
+def test_private_state_ready_requires_read_only_wallet_positions_and_orders(monkeypatch):
+    async def accept_validation(self):
+        return {"readOnly": 1}
+
+    async def wallet(self):
+        return {"list": [{"totalAvailableBalance": "100"}]}
+
+    async def positions(self, category, symbol):
+        return {"list": []}
+
+    async def orders(self, category, symbol):
+        return {"list": []}
+
+    monkeypatch.setattr(ReadOnlyBybitClient, "validate_read_only", accept_validation)
+    monkeypatch.setattr(ReadOnlyBybitClient, "account_state", wallet)
+    monkeypatch.setattr(ReadOnlyBybitClient, "positions", positions)
+    monkeypatch.setattr(ReadOnlyBybitClient, "open_orders", orders)
+    app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="key", bybit_api_secret="secret", bybit_testnet=False))
+    with TestClient(app) as client:
+        diagnostics = client.get("/api/diagnostics/bybit?symbol=BTCUSDT").json()
+        health = client.get("/api/health").json()
+    assert diagnostics["read_only_validated"] is True
+    assert diagnostics["wallet_status"] == diagnostics["positions_status"] == diagnostics["open_orders_status"] == "ok"
+    assert diagnostics["private_state_ready"] is True
+    assert health["private_state_ready"] is True
+    assert "key" not in str(health).lower()
+    assert "secret" not in str(health).lower()
 
 
 def test_private_calculation_ignores_forged_browser_facts():

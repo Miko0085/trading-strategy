@@ -27,11 +27,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         client = ReadOnlyBybitClient(settings.bybit_api_key, settings.bybit_api_secret, settings.bybit_testnet, http_client)
         app.state.bybit = client
         app.state.private_ready = False
-        if settings.private_configured:
-            await client.validate_read_only()
-            app.state.private_ready = True
         app.state.account_service = AccountStateService(client, stale_after_seconds=settings.stale_after_seconds)
+        app.state.diagnostics = {
+            "repository_root_found": settings.repository_root_found,
+            "root_env_found": settings.root_env_found,
+            "module_env_found": settings.module_env_found,
+            "api_key_present": bool(settings.bybit_api_key),
+            "api_secret_present": bool(settings.bybit_api_secret),
+            "credential_source": settings.credential_source,
+            "environment": settings.environment,
+            "private_configured": settings.private_configured,
+            "read_only_validated": False,
+            "query_api_status": "error",
+            "wallet_status": "error",
+            "positions_status": "error",
+            "open_orders_status": "error",
+            "private_state_ready": False,
+            "last_safe_error": "Не найден API ключ или secret" if not settings.private_configured else None,
+        }
         try:
+            if settings.private_configured:
+                await run_private_diagnostics(app, "BTCUSDT")
             yield
         finally:
             await client.close()
@@ -41,9 +57,55 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.repository = RevisionRepository(settings.database_url)
 
+    async def run_private_diagnostics(app: FastAPI, symbol: str) -> dict[str, Any]:
+        diagnostic = dict(app.state.diagnostics)
+        if not settings.private_configured:
+            diagnostic["last_safe_error"] = "Не найден API ключ или secret"
+            app.state.private_ready = False
+            app.state.diagnostics = diagnostic
+            return diagnostic
+        try:
+            await app.state.bybit.validate_read_only()
+            diagnostic["read_only_validated"] = True
+            diagnostic["query_api_status"] = "ok"
+        except ReadOnlyBybitError:
+            diagnostic["last_safe_error"] = "Не удалось подтвердить режим только чтение"
+            app.state.private_ready = False
+            app.state.diagnostics = diagnostic
+            return diagnostic
+
+        probes = (
+            ("wallet_status", lambda: app.state.bybit.account_state()),
+            ("positions_status", lambda: app.state.bybit.positions("linear", symbol)),
+            ("open_orders_status", lambda: app.state.bybit.open_orders("linear", symbol)),
+        )
+        for status_name, probe in probes:
+            try:
+                result = await probe()
+                if not isinstance(result.get("list"), list):
+                    raise ReadOnlyBybitError("Bybit result list is missing")
+                diagnostic[status_name] = "ok"
+            except ReadOnlyBybitError:
+                diagnostic[status_name] = "error"
+                if diagnostic["last_safe_error"] is None:
+                    diagnostic["last_safe_error"] = {
+                        "wallet_status": "Данные кошелька Bybit недоступны",
+                        "positions_status": "Данные позиций Bybit недоступны",
+                        "open_orders_status": "Ордера Bybit недоступны",
+                    }[status_name]
+        diagnostic["private_state_ready"] = diagnostic["read_only_validated"] and all(diagnostic[name] == "ok" for name in ("wallet_status", "positions_status", "open_orders_status"))
+        app.state.private_ready = diagnostic["private_state_ready"]
+        app.state.diagnostics = diagnostic
+        return diagnostic
+
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
-        return {"status": "ok", "private_integration": settings.private_configured, "read_only": bool(getattr(app.state, "private_ready", False)), "environment": "testnet" if settings.bybit_testnet else "mainnet"}
+        diagnostic = app.state.diagnostics
+        return {"status": "ok", "private_integration": settings.private_configured, "read_only": diagnostic["read_only_validated"], "environment": settings.environment, "credential_source": settings.credential_source, "private_state_ready": diagnostic["private_state_ready"]}
+
+    @app.get("/api/diagnostics/bybit")
+    async def bybit_diagnostics(symbol: str = "BTCUSDT") -> dict[str, Any]:
+        return await run_private_diagnostics(app, symbol.upper())
 
     @app.get("/api/symbols")
     async def symbols(query: str = "") -> dict[str, Any]:
