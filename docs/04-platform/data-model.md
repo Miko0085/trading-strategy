@@ -2,102 +2,50 @@
 
 **Статус: RECORDER РЕАЛИЗОВАН / STRATEGY И EXECUTION MODEL ПРОЕКТИРУЮТСЯ**
 
-## 1. Recorder — фактическая реальность
+## Recorder — фактическая реальность
 
-Recorder хранит machine truth:
-- orders;
-- executions;
-- positions;
-- closed_pnl;
-- funding;
-- current_states;
-- observations;
-- timeline;
-- trader_notes;
-- tracked_instruments.
+Recorder хранит orders, executions, positions, closed_pnl, funding, current_states, observations и timeline.
 
-## 2. Strategy Intent Model — что хотели сделать
+## Strategy Intent
 
-Будущие сущности:
+### Grid / GridCycle
+Долгоживущая сетка и контекст текущей geometry/anchor.
 
-### Grid
-Долгоживущая Long или Short сетка.
+### GridGeometry
+Концептуальные поля: order_count, depth_pct, first_offset_pct, distribution_coefficient, relative_spacing, anchor/reference, geometry revision.
+
+### GridSizingPolicy
+mode manual/generated, base size/notional, martingale coefficient, dynamic sizing policy version.
+
+### CapitalAllocationPolicy
+long_pct, short_pct, reserve_pct.
+
+### GridSideConfig
+enabled_long, enabled_short.
 
 ### GridRevision
-Immutable-версия параметров Grid.
+Immutable snapshot будущей конфигурации.
 
 ### GridOrderConfig
-Логическая настройка конкретного уровня.
+side, level, source mode, geometry reference, planned_notional, configured_qty, TP configuration.
 
-### TPStepConfig
-Намерение по разгрузке конкретного исполненного объёма.
+### PositionModeSnapshot
+Factual state: symbol, HEDGE/ONE_WAY/UNKNOWN, observed_at. Position Mode не является Trader Intent.
+
+### RestructuringTrigger
+type, source factual event, timestamp.
 
 ### RestructuringPlan
-Предложение Decision Layer о том, как изменить текущую Grid. Оно ещё не означает, что действия разрешены и исполнены.
+trigger, capital snapshot, allocation snapshot, geometry reference, qty changes, optional anchor change, keep/cancel/amend/create, target revision.
 
-## 3. Risk Decision Model
+## Execution
 
-```text
-RiskDecision
-- source_plan_id
-- decision: ALLOW | MODIFY | DENY
-- reasons
-- modified_limits?
-- created_at
-```
+ApprovedExecutionPlan → ExecutionCommand → ExchangeOrder → Execution.
 
-Точная схема будет определена позже.
+## Attribution
 
-## 4. Execution Model — что отправили на биржу
-
-### ApprovedExecutionPlan
-Утверждённый набор команд после Risk Manager.
-
-### ExecutionCommand
-Отдельная идемпотентная команда: PLACE / AMEND / CANCEL / разрешённый CLOSE.
-
-### ExchangeOrder
-Реальный order на Bybit.
-
-### Execution / Fill
-Фактическое исполнение.
-
-## 5. Position Attribution Model
-
-### StrategyLot / Filled Allocation
-
-Появляется после первого фактического fill конкретного Grid Order и хранит:
-- source GridOrderConfig;
-- linked ExchangeOrders;
-- executions;
-- configured_qty;
-- filled_qty;
-- actual average entry;
-- open_qty;
-- closed_qty;
-- realized PnL;
-- TP state.
-
-### RestructuringEvent
-Audit/research факт реструктуризации и её результата.
+StrategyLot/Filled Allocation хранит source GridOrderConfig, executions, configured_qty, filled_qty, actual average fill, open_qty, closed_qty, realized PnL и TP state.
 
 ## Главная цепочка
 
-```text
-INTENT
-GridRevision / GridOrderConfig / RestructuringPlan
-        ↓
-RISK DECISION
-ALLOW / MODIFY / DENY
-        ↓
-EXECUTION INTENT
-ApprovedExecutionPlan / ExecutionCommand
-        ↓
-EXCHANGE REALITY
-ExchangeOrder / Execution
-        ↓
-ATTRIBUTED RESULT
-StrategyLot / PnL / Account State
-```
-
-Эти уровни нельзя схлопывать в одну таблицу или одну сущность.
+INTENT → RISK DECISION → APPROVED EXECUTION → EXCHANGE REALITY → LOT ATTRIBUTION → RESTRUCTURING TRIGGER → NEW INTENT REVISION.
