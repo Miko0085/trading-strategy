@@ -1,6 +1,6 @@
 .mobile-header,.mobile-account-snapshot,.mobile-side-switch,.mobile-side-summary,.mobile-bottom-bar,.center-mobile-toggle,.mobile-calc-summary{display:none}.window-control>button{display:none}
 
-@media (max-width: 760px){
+@media (max-width: 760px), (orientation: landscape) and (max-height: 500px) and (max-width: 900px){
   :root{--mobile-gutter:12px}
   html,body,#root{max-width:100%;min-width:0;overflow-x:hidden}
   body{padding-top:env(safe-area-inset-top)}
