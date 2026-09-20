@@ -54,6 +54,15 @@ def test_hedge_positions_are_normalized_to_long_short():
     assert result[0]["notional"] == "210"
 
 
+def test_long_only_and_short_only_keep_missing_side_distinct_from_malformed_data():
+    long_only = normalize_account({"list": []}, {"list": [{"side": "Buy", "positionIdx": 1, "size": "2"}]}, {"list": []}, {"list": [{"symbol": "BTCUSDT", "markPrice": "100"}]}, {"symbol": "BTCUSDT"}, "bybit_read_only")
+    short_only = normalize_account({"list": []}, {"list": [{"side": "Sell", "positionIdx": 2, "size": "3"}]}, {"list": []}, {"list": [{"symbol": "BTCUSDT", "markPrice": "100"}]}, {"symbol": "BTCUSDT"}, "bybit_read_only")
+    empty = normalize_account({"list": []}, {"list": []}, {"list": []}, {"list": [{"symbol": "BTCUSDT", "markPrice": "100"}]}, {"symbol": "BTCUSDT"}, "bybit_read_only")
+    assert long_only["long"]["size"] == "2" and long_only["short"] is None
+    assert short_only["short"]["size"] == "3" and short_only["long"] is None
+    assert empty["long"] is None and empty["short"] is None
+
+
 def test_normalized_account_keeps_actual_averages_and_exposure():
     result = normalize_account({"list": [{"totalWalletBalance": "1000", "totalEquity": "1010", "totalAvailableBalance": "800"}]}, {"list": [{"side": "Buy", "positionIdx": 1, "size": "2", "avgPrice": "100"}, {"side": "Sell", "positionIdx": 2, "size": "1", "avgPrice": "110"}]}, {"list": []}, {"list": [{"symbol": "BTCUSDT", "markPrice": "105"}]}, {"symbol": "BTCUSDT"}, "bybit_read_only")
     assert result["long"]["avg_entry_price"] == "100"

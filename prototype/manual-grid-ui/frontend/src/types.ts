@@ -9,3 +9,4 @@ export type CalculationResult = { symbol: string; mark_price: string | number; a
 export type AccountApiResponse = Partial<AccountState> & Record<string, unknown>;
 export type AuditEvent = { id?: string; created_at: string; entity_type?: string; entity_id?: string; side?: string | null; action: string; before?: Record<string, unknown> | null; after?: Record<string, unknown> | null };
 export type RevisionResponse = { id: string; symbol: string; comment: string; validation_state: string; created_at: string };
+export type SymbolsResponse = { symbols: string[]; updated_at?: string };
