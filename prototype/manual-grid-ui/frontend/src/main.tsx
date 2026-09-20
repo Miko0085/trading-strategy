@@ -33,13 +33,13 @@ function App() {
   const addOrder = (side: Side) => { const setter = side === "long" ? setLong : setShort; setter((items) => [...items, newOrder(side, items.length + 1)]); };
   const removeOrder = (side: Side, id: string) => { const setter = side === "long" ? setLong : setShort; setter((items) => items.filter((o) => o.id !== id).map((o, i) => ({ ...o, level: i + 1 }))); };
   const save = async () => {
-    if (!authoritative || authoritative.validation_state !== "VALID") { setNotice("Сохранение доступно только для подтверждённой backend-конфигурации без ошибок"); return; }
+    if (!authoritative) { setNotice("Сначала получите подтверждённый backend-расчёт"); return; }
     setSaving(true); setNotice("");
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: account.symbol, comment: "", configuration: { symbol: account.symbol, allocation, planningLeverage, activeLongCount: activeLong, activeShortCount: activeShort, long, short } }) });
       if (!response.ok) throw new Error("save failed");
       setRevisions((r) => [{ time: new Date().toLocaleString("ru-RU"), action: "Сохранена новая версия конфигурации" }, ...r]);
-      setNotice("Версия сохранена в PostgreSQL");
+      setNotice(authoritative.validation_state === "BLOCKED" ? "Версия сохранена, но конфигурация заблокирована для исполнения" : "Версия сохранена в PostgreSQL");
     } catch { setNotice("Не удалось сохранить: проверьте backend и PostgreSQL"); }
     setSaving(false);
   };
