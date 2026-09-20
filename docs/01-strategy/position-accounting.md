@@ -1,37 +1,24 @@
 # Учёт позиции и Strategy Lot
 
-## Основная единица объёма
+## Основные количества
 
-Основная единица размера — **количество монет**.
+- configured_qty — целевой объём Entry;
+- filled_qty — реально исполненный объём;
+- open_qty — factual filled qty минус уже закрытый объём;
+- closed_qty — уже разгруженный factual qty.
 
-### Заданный объём (`configured_qty`)
+## Aggregate Position ≠ Strategy Lot
 
-Объём, который трейдер хочет набрать по конкретному Grid Order.
+Bybit объединяет Long/Short в агрегированную позицию. Платформа должна отдельно знать происхождение каждого объёма: source GridOrderConfig, executions, actual average fill, open_qty, closed_qty, realized PnL и TP configuration.
 
-### Фактически исполненный объём (`filled_qty`)
+Это позволяет конкретному глубокому lot быть прибыльно разгруженным независимо от aggregate average всей стороны.
 
-Сколько монет биржа реально уже исполнила по этому Grid Order.
+## Частичные fills
 
-Именно `filled_qty` является базой для расчёта фактической разгрузки.
+Несколько fills одного Entry не создают несколько Grid Orders. После первого fill StrategyLot уже существует в состоянии accumulating и обновляет filled_qty/avg fill по мере новых executions.
 
-### Открытый объём (`open_qty`)
+## PnL decomposition
 
-Фактически исполненный объём этого Strategy Lot за вычетом уже закрытого объёма.
+Для аналитики отдельно учитываются realized PnL по Strategy Lots, unrealized PnL, fees, funding и liquidation/forced-close effects.
 
-### Закрытый объём (`closed_qty`)
-
-Сколько монет уже закрыто по этому Strategy Lot.
-
-## Один Grid Order — одна логическая единица стратегии
-
-Даже если биржа исполнила один Grid Order несколькими fills, стратегия не дробит его на несколько ордеров.
-
-Его фактическая средняя цена пересчитывается по реальным executions.
-
-## Почему нельзя использовать только агрегированную позицию Bybit
-
-Bybit объединяет объёмы Long или Short в общую позицию.
-
-Наша система должна отдельно помнить происхождение каждого Grid Order: source order, configured_qty, filled_qty, фактическую среднюю цену исполнения, open_qty, closed_qty и TP configuration.
-
-Так можно отдельно управлять разгрузкой каждого уровня и не зависеть от общей average price Bybit.
+Нельзя оценивать стратегию только по отдельным успешным partial closes или только по текущей aggregate average.
