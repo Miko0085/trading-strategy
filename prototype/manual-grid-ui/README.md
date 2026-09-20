@@ -31,7 +31,7 @@ npm install
 npm run dev
 ```
 
-Открыть `http://localhost:5173`. Если Bybit credentials не заданы, интерфейс API показывает безопасные demo account values; реальные private данные появляются только после read-only проверки ключа.
+Открыть `http://localhost:5173`. Если ключ не задан или backend недоступен, интерфейс показывает `нет данных` и блокирует сохранение; фиктивные балансы и цены не используются. Реальные private данные появляются только после read-only проверки ключа.
 
 ## ENV
 
@@ -46,6 +46,7 @@ Backend при наличии ключа вызывает только `GET /v5/
 
 ```bash
 psql "$DATABASE_URL" -f migrations/001_initial.sql
+psql "$DATABASE_URL" -f migrations/002_hardening.sql
 ```
 
 ## Tests
@@ -57,4 +58,4 @@ PYTHONPATH=backend pytest -q tests
 cd frontend && npm test -- --run
 ```
 
-Проверяются Decimal-расчёты цены, weighted average, TP/P&L, allocation guard, полная сетка против лимита и read-only boundary. Production order placement, automatic restructuring, automatic sizing, AI decisions и Risk Manager намеренно не входят в MVP.
+Проверяются Decimal-расчёты цены, weighted average, TP/P&L, allocation guard, полная сетка против лимита, normalized account state, read-only boundary и API-контракт. Production order placement, automatic restructuring, automatic sizing, AI decisions и Risk Manager намеренно не входят в MVP.
