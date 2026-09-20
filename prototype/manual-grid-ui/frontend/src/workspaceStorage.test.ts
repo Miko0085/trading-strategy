@@ -8,10 +8,14 @@ describe("local workspace storage", () => {
   it("stores a versioned workspace and isolates drafts by symbol", () => {
     const btc = emptyDraft(); btc.long = [{ id: "btc-1", side: "long", level: 1, offsetPct: 5, qty: 0.1, filledQty: 0, avgFill: null, tps: [], note: "btc" }];
     const eth = emptyDraft(); eth.long = [{ id: "eth-1", side: "long", level: 1, offsetPct: 10, qty: 1, filledQty: 0, avgFill: null, tps: [], note: "eth" }];
+    btc.enabledLong = true; btc.enabledShort = true;
+    eth.enabledLong = true; eth.enabledShort = false;
     saveDraft("BTCUSDT", btc); saveDraft("ETHUSDT", eth); setSelectedSymbol("ETHUSDT");
     expect(loadWorkspace().selectedSymbol).toBe("ETHUSDT");
     expect(loadDraft("BTCUSDT")?.long[0].qty).toBe(0.1);
     expect(loadDraft("ETHUSDT")?.long[0].qty).toBe(1);
+    expect(loadDraft("BTCUSDT")?.enabledShort).toBe(true);
+    expect(loadDraft("ETHUSDT")?.enabledShort).toBe(false);
     const stored = JSON.parse(window.localStorage.getItem(WORKSPACE_STORAGE_KEY) ?? "{}");
     expect(stored.version).toBe(1);
     expect(JSON.stringify(stored)).not.toContain("markPrice");

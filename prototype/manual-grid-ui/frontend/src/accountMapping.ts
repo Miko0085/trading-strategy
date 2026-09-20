@@ -24,6 +24,8 @@ export function normalizeAccountResponse(data: AccountApiResponse, current: Acco
   }));
   return {
     ...current,
+    positionMode: data.position_mode || "UNKNOWN",
+    positionModeSymbol: data.position_mode_symbol || data.instrument?.symbol || current.symbol,
     markPrice: numberOrNull(data.mark_price),
     availableMargin: numberOrNull(data.available_margin),
     equity: numberOrNull(data.equity),

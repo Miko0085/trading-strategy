@@ -181,6 +181,10 @@ def calculate_side(
     return {"side": side, "orders": normalized, "active_window_levels": policy.active_levels(), "queued_levels": policy.queued_levels(), "next_activation_candidate": policy.queued_levels()[0] if policy.queued_levels() else None, "full_grid_planned_margin": full_margin, "active_window_planned_margin": active_margin, "queued_planned_margin": queued_margin, "planned_qty": sum(quantities, ZERO), "planned_average": planned_avg, "cumulative_planned_average": cumulative, "aggregate_tp_gross_pnl": aggregate_gross, "aggregate_fee_estimate": aggregate_fee, "aggregate_net_pnl": aggregate_gross - aggregate_fee if aggregate_fee is not None else None, "validation_errors": errors, "status": "VALID" if not errors else "BLOCKED"}
 
 
+def disabled_side(side: str, allocation_limit: Decimal) -> dict[str, Any]:
+    return {"side": side, "orders": [], "active_window_levels": [], "queued_levels": [], "next_activation_candidate": None, "full_grid_planned_margin": ZERO, "active_window_planned_margin": ZERO, "queued_planned_margin": ZERO, "planned_qty": ZERO, "planned_average": None, "cumulative_planned_average": [], "aggregate_tp_gross_pnl": ZERO, "aggregate_fee_estimate": ZERO, "aggregate_net_pnl": ZERO, "validation_errors": [], "status": "VALID", "allocation_limit": allocation_limit, "remaining_limit": allocation_limit, "utilization_pct": ZERO, "excess": ZERO, "disabled": True}
+
+
 def calculate_configuration(payload: dict[str, Any], *, instrument: dict[str, Any], account: dict[str, Any] | None = None) -> dict[str, Any]:
     allocation = payload["allocation"]
     available = required_decimal(account, "available_margin") if account is not None else required_decimal(payload, "available_margin")
@@ -192,9 +196,16 @@ def calculate_configuration(payload: dict[str, Any], *, instrument: dict[str, An
     fee_rate = D(payload["fee_rate"]) if payload.get("fee_rate") is not None else None
     allocation_result = allocation_limits(available, D(allocation["long_pct"]), D(allocation["short_pct"]), D(allocation["reserve_pct"]))
     mark = required_decimal(payload, "mark_price")
-    result: dict[str, Any] = {"symbol": payload["symbol"], "mark_price": mark, "available_margin": available, "instrument": limits, "leverage": leverage, "fee_rate": fee_rate, "allocation_limits": allocation_result, "account_state_timestamp": payload.get("account_state_timestamp"), "instrument_source": payload.get("instrument_source")}
+    enabled_long = bool(payload.get("enabled_long", True))
+    enabled_short = bool(payload.get("enabled_short", True))
+    position_mode = str(payload.get("position_mode", "UNKNOWN")).upper()
+    result: dict[str, Any] = {"symbol": payload["symbol"], "mark_price": mark, "available_margin": available, "instrument": limits, "leverage": leverage, "fee_rate": fee_rate, "allocation_limits": allocation_result, "account_state_timestamp": payload.get("account_state_timestamp"), "instrument_source": payload.get("instrument_source"), "position_mode": position_mode, "position_mode_symbol": payload.get("position_mode_symbol", payload["symbol"]), "enabled_long": enabled_long, "enabled_short": enabled_short}
+    mode_errors: list[str] = []
+    if enabled_long and enabled_short and position_mode != "HEDGE":
+        mode_errors.append("Одновременный Long + Short требует Hedge Mode." if position_mode == "ONE_WAY" else "Не удалось подтвердить Position Mode. Двухсторонняя конфигурация недоступна, пока режим Bybit не подтверждён.")
     for side in ("long", "short"):
-        result[side] = calculate_side(side=side, mark_price=mark, orders=payload[side], active_count=int(payload[f"active_{side}_count"]), leverage=leverage, fee_rate=fee_rate, **limits)
+        enabled = enabled_long if side == "long" else enabled_short
+        result[side] = calculate_side(side=side, mark_price=mark, orders=payload[side], active_count=int(payload[f"active_{side}_count"]), leverage=leverage, fee_rate=fee_rate, **limits) if enabled else disabled_side(side, allocation_result[side])
         result[side]["allocation_limit"] = allocation_result[side]
         current_margin = (account or {}).get(f"{side}_initial_margin")
         result[side]["current_used_context"] = D(current_margin) if current_margin not in (None, "") else None
@@ -210,6 +221,6 @@ def calculate_configuration(payload: dict[str, Any], *, instrument: dict[str, An
     fees = [result[side]["aggregate_fee_estimate"] for side in ("long", "short")]
     result["combined_fee_estimate"] = sum(fees, ZERO) if all(fee is not None for fee in fees) else None
     result["combined_net_pnl"] = result["combined_gross_pnl"] - result["combined_fee_estimate"] if result["combined_fee_estimate"] is not None else None
-    result["validation_errors"] = result["long"]["validation_errors"] + result["short"]["validation_errors"]
-    result["validation_state"] = "VALID" if result["long"]["status"] == result["short"]["status"] == "VALID" else "BLOCKED"
+    result["validation_errors"] = result["long"]["validation_errors"] + result["short"]["validation_errors"] + ([{"level": 0, "errors": mode_errors}] if mode_errors else [])
+    result["validation_state"] = "VALID" if not result["validation_errors"] and result["long"]["status"] == result["short"]["status"] == "VALID" else "BLOCKED"
     return result

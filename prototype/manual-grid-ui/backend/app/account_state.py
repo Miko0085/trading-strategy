@@ -32,6 +32,21 @@ def normalize_positions(result: dict[str, Any], mark_price: str | None) -> list[
     return normalized
 
 
+def normalize_position_mode(result: dict[str, Any]) -> str:
+    """Infer the symbol mode from Bybit's factual positionIdx values.
+
+    Bybit uses positionIdx=0 for one-way and 1/2 for hedge. With no rows
+    there is no safe read-only proof of the symbol mode, so keep it unknown.
+    """
+    rows = result.get("list", [])
+    indices = {str(item.get("positionIdx")) for item in rows if item.get("positionIdx") is not None}
+    if indices & {"1", "2"}:
+        return "HEDGE"
+    if indices and indices <= {"0"}:
+        return "ONE_WAY"
+    return "UNKNOWN"
+
+
 def normalize_orders(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"order_id": item.get("orderId"), "symbol": item.get("symbol"), "side": item.get("side"), "status": item.get("orderStatus"), "price": item.get("price"), "qty": item.get("qty"), "leaves_qty": item.get("leavesQty"), "position_idx": item.get("positionIdx")} for item in result.get("list", [])]
 
@@ -47,4 +62,4 @@ def normalize_account(wallet: dict[str, Any], positions: dict[str, Any], orders:
     short_size = Decimal(str(short_position["size"])) if short_position and short_position["size"] is not None else None
     gross = Decimal(str(mark)) * (long_size + short_size) if mark is not None and long_size is not None and short_size is not None else None
     net = Decimal(str(mark)) * (long_size - short_size) if mark is not None and long_size is not None and short_size is not None else None
-    return {"source": source, "symbol": ticker_row.get("symbol") or instrument.get("symbol"), "mark_price": mark, "wallet_balance": pick(account, "totalWalletBalance"), "equity": pick(account, "totalEquity"), "available_margin": pick(account, "totalAvailableBalance"), "initial_margin": pick(account, "totalInitialMargin"), "maintenance_margin": pick(account, "totalMaintenanceMargin"), "positions": position_rows, "long": long_position, "short": short_position, "gross_exposure": str(gross) if gross is not None else None, "net_exposure": str(net) if net is not None else None, "orders": normalize_orders(orders), "instrument": instrument}
+    return {"source": source, "symbol": ticker_row.get("symbol") or instrument.get("symbol"), "mark_price": mark, "wallet_balance": pick(account, "totalWalletBalance"), "equity": pick(account, "totalEquity"), "available_margin": pick(account, "totalAvailableBalance"), "initial_margin": pick(account, "totalInitialMargin"), "maintenance_margin": pick(account, "totalMaintenanceMargin"), "positions": position_rows, "long": long_position, "short": short_position, "gross_exposure": str(gross) if gross is not None else None, "net_exposure": str(net) if net is not None else None, "orders": normalize_orders(orders), "instrument": instrument, "position_mode": normalize_position_mode(positions), "position_mode_symbol": ticker_row.get("symbol") or instrument.get("symbol")}

@@ -42,21 +42,26 @@ class GridConfigurationDTO(ApiModel):
     symbol: str = Field(min_length=1, max_length=30)
     allocation: AllocationDTO
     planning_leverage: Decimal | None = Field(default=None, gt=0, validation_alias=AliasChoices("planning_leverage", "planningLeverage", "leverage"))
-    active_long_count: int = Field(ge=1, validation_alias=AliasChoices("active_long_count", "activeLongCount"))
-    active_short_count: int = Field(ge=1, validation_alias=AliasChoices("active_short_count", "activeShortCount"))
-    long: list[GridOrderDTO]
-    short: list[GridOrderDTO]
+    enabled_long: bool = Field(default=True, validation_alias=AliasChoices("enabled_long", "enabledLong"))
+    enabled_short: bool = Field(default=True, validation_alias=AliasChoices("enabled_short", "enabledShort"))
+    active_long_count: int = Field(ge=0, validation_alias=AliasChoices("active_long_count", "activeLongCount"))
+    active_short_count: int = Field(ge=0, validation_alias=AliasChoices("active_short_count", "activeShortCount"))
+    long: list[GridOrderDTO] = Field(default_factory=list)
+    short: list[GridOrderDTO] = Field(default_factory=list)
     fee_rate: Decimal | None = Field(default=None, ge=0, validation_alias=AliasChoices("fee_rate", "feeRate"))
-
-    @field_validator("long", "short")
-    @classmethod
-    def orders_not_empty(cls, value: list[GridOrderDTO]) -> list[GridOrderDTO]:
-        if not value:
-            raise ValueError("Сетка должна содержать хотя бы один уровень")
-        return value
 
     @model_validator(mode="after")
     def active_counts_fit(self) -> "GridConfigurationDTO":
+        if not self.enabled_long and self.active_long_count != 0:
+            raise ValueError("Для выключенной Long стороны active_long_count должен быть 0")
+        if not self.enabled_short and self.active_short_count != 0:
+            raise ValueError("Для выключенной Short стороны active_short_count должен быть 0")
+        if self.enabled_long and (not self.long or self.active_long_count < 1):
+            raise ValueError("Для включённой Long стороны нужен хотя бы один уровень")
+        if self.enabled_short and (not self.short or self.active_short_count < 1):
+            raise ValueError("Для включённой Short стороны нужен хотя бы один уровень")
+        if not self.enabled_long and not self.enabled_short:
+            raise ValueError("Включите хотя бы одну сторону стратегии")
         if self.active_long_count > len(self.long) or self.active_short_count > len(self.short):
             raise ValueError("Размер активного окна не может превышать число уровней")
         return self

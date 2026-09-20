@@ -161,9 +161,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
                 "account_state_timestamp": state.get("updated_at"),
                 "instrument_source": "bybit_read_only",
+                "position_mode": state.get("position_mode", "UNKNOWN"),
+                "position_mode_symbol": state.get("position_mode_symbol", configuration.symbol),
             }
         elif settings.allow_fixture_data:
-            factual = {key: client_payload.get(key) for key in ("mark_price", "available_margin", "instrument", "account", "account_state_timestamp", "instrument_source")}
+            factual = {key: client_payload.get(key) for key in ("mark_price", "available_margin", "instrument", "account", "account_state_timestamp", "instrument_source", "position_mode", "position_mode_symbol")}
             factual["account"] = factual.get("account") or {"available_margin": factual.get("available_margin")}
             if not factual.get("mark_price") or not factual.get("available_margin") or not factual.get("instrument"):
                 raise ReadOnlyBybitError("Fixture factual state is incomplete")
