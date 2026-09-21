@@ -9,3 +9,18 @@ nav button{font-size:14px}
 .order-inputs label{font-size:11px}
 .note{font-size:11px}
 .tp-line{font-size:10px}
+
+/* Readable text inside cards and panels. */
+.allocation-box,.grid-column,.center-panel,.risk-meter,.state-panel,.generated-panel{font-size:15px}
+.alloc-foot,.window-control,.guard,.position-head,.ladder-title,.rung,.mark-line{font-size:11px}
+.price-row span,.order-inputs span{font-size:11px}
+.price-row b{font-size:18px}
+.order-inputs b,.plan-box b{font-size:12px}
+.tp-title{font-size:11px}
+.tp-title span,.tp-title button{font-size:10px}
+.tp-line{font-size:10px;line-height:1.35}
+.tp-line input{font-size:11px}
+.guard small{font-size:10px}
+.generated-field{font-size:10px}
+.generated-field input{font-size:12px}
+.shadow-result{font-size:11px}
