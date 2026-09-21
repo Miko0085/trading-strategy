@@ -7,7 +7,11 @@ export type RiskMeterModel = { state: "neutral" | "ok" | "danger"; utilization: 
 export function riskMeterModel(calculation?: SideCalculationResult): RiskMeterModel {
   if (!calculation) return { state: "neutral", utilization: "—", limit: "—", activeWindow: "—", queue: "—", fullGrid: "—", remaining: "—", excess: "—" };
   const excess = Number(calculation.excess ?? 0);
-  return { state: excess > 0 || calculation.status === "BLOCKED" ? "danger" : "ok", utilization: pct(Number(calculation.utilization_pct ?? 0)), limit: money(Number(calculation.allocation_limit)), activeWindow: money(Number(calculation.active_window_planned_margin)), queue: money(Number(calculation.queued_planned_margin)), fullGrid: money(Number(calculation.full_grid_planned_margin)), remaining: money(Number(calculation.remaining_limit)), excess: excess > 0 ? money(excess) : "—" };
+  // A blocked calculation can be caused by a field/order validation error and
+  // does not necessarily mean that the capital limit was exceeded. The meter
+  // turns danger only for factual excess; otherwise its gradient reflects the
+  // actual utilization percentage.
+  return { state: excess > 0 ? "danger" : "ok", utilization: pct(Number(calculation.utilization_pct ?? 0)), limit: money(Number(calculation.allocation_limit)), activeWindow: money(Number(calculation.active_window_planned_margin)), queue: money(Number(calculation.queued_planned_margin)), fullGrid: money(Number(calculation.full_grid_planned_margin)), remaining: money(Number(calculation.remaining_limit)), excess: excess > 0 ? money(excess) : "—" };
 }
 
 export function UtilizationGauge({ side, calculation }: { side: Side; calculation?: SideCalculationResult }) {

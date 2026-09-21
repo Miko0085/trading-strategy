@@ -19,6 +19,13 @@ describe("risk meter and factual state", () => {
     expect(result.excess).toContain("20");
   });
 
+  it("keeps the meter gradient active when validation is blocked for another reason", () => {
+    const result = riskMeterModel({ side: "long", orders: [], active_window_levels: [], queued_levels: [], full_grid_planned_margin: 40, active_window_planned_margin: 40, queued_planned_margin: 0, planned_qty: 1, planned_average: 1, aggregate_tp_gross_pnl: 0, aggregate_fee_estimate: null, aggregate_net_pnl: null, allocation_limit: 100, remaining_limit: 60, utilization_pct: 40, excess: null, validation_errors: [{ level: 1, errors: ["qty must be >= minOrderQty"] }], status: "BLOCKED" });
+    expect(result.state).toBe("ok");
+    expect(result.utilization).toContain("40");
+    expect(result.excess).toBe("—");
+  });
+
   it("describes empty and unavailable exchange orders distinctly", () => {
     expect(stateOrdersMessage({ ...initialAccount, ordersAvailable: true, openOrders: [] })).toBe("Активных ордеров нет");
     expect(stateOrdersMessage({ ...initialAccount, ordersAvailable: false, ordersError: "safe error" })).toBe("Не удалось получить активные ордера Bybit");
