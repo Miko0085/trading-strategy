@@ -51,6 +51,7 @@
   .generated-apply-all{display:grid;gap:8px;margin-top:16px}
   .generated-apply-all .save{width:100%;min-height:52px;justify-content:center;padding:12px 16px;font-size:15px;touch-action:manipulation}
   .generated-apply-hint{display:block;color:var(--muted);line-height:1.35;overflow-wrap:anywhere}
+  .generated-apply-warning{display:block;color:var(--amber);line-height:1.35;overflow-wrap:anywhere}
 }
 
 @media (max-width:760px){
