@@ -46,6 +46,11 @@
   .generated-panel>.shadow-result{order:5}
   .generated-fields{grid-template-columns:repeat(2,1fr)}
   .shadow-sides{grid-template-columns:1fr}
+  .shadow-sides>div{gap:8px;padding:12px 0 14px}
+  .generated-apply{display:flex;width:100%;min-height:50px;align-items:center;justify-content:center;margin-top:5px;padding:12px 16px;font-size:15px;touch-action:manipulation}
+  .generated-apply-all{display:grid;gap:8px;margin-top:16px}
+  .generated-apply-all .save{width:100%;min-height:52px;justify-content:center;padding:12px 16px;font-size:15px;touch-action:manipulation}
+  .generated-apply-hint{display:block;color:var(--muted);line-height:1.35;overflow-wrap:anywhere}
 }
 
 @media (max-width:760px){
