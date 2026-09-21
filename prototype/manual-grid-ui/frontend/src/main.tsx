@@ -63,6 +63,27 @@ export function App() {
   const editOrder = (side: Side, id: string, patch: Partial<GridOrder>) => (side === "long" ? setLong : setShort)((items) => items.map((order) => order.id === id ? { ...order, ...patch } : order));
   const addOrder = (side: Side) => { (side === "long" ? setLong : setShort)((items) => [...items, newOrder(side, items.length + 1)]); if (side === "long" && activeLong === 0) setActiveLong(1); if (side === "short" && activeShort === 0) setActiveShort(1); };
   const removeOrder = (side: Side, id: string) => (side === "long" ? setLong : setShort)((items) => items.filter((order) => order.id !== id).map((order, index) => ({ ...order, level: index + 1 })));
+  const applyGenerated = (side: Side, orders: GridOrder[], active: number) => {
+    const current = side === "long" ? long : short;
+    if (current.length > 0 && !window.confirm(`Текущая ${side === "long" ? "Long" : "Short"} Grid будет заменена generated configuration.`)) return;
+    (side === "long" ? setLong : setShort)(orders);
+    (side === "long" ? setActiveLong : setActiveShort)(Math.min(Math.max(1, active), orders.length));
+    setRevisions((items) => [{ time: new Date().toISOString(), action: "generated_grid_applied", side, entityType: "grid_order", entityId: `generated-${side}-${Date.now()}`, before: current, after: orders, comment: "GENERATED_ALGORITHM" }, ...items]);
+    setNotice(`${side === "long" ? "Long" : "Short"} Grid заменена generated configuration`);
+  };
+  const applyGeneratedBoth = (nextLong: GridOrder[], nextLongActive: number, nextShort: GridOrder[], nextShortActive: number) => {
+    if ((long.length > 0 || short.length > 0) && !window.confirm("Текущие Long Grid и Short Grid будут заменены generated configuration.")) return;
+    setLong(nextLong); setShort(nextShort);
+    setActiveLong(Math.min(Math.max(1, nextLongActive), nextLong.length)); setActiveShort(Math.min(Math.max(1, nextShortActive), nextShort.length));
+    setRevisions((items) => [{ time: new Date().toISOString(), action: "generated_grid_applied", side: "long+short", entityType: "grid_order", entityId: `generated-both-${Date.now()}`, before: { long, short }, after: { long: nextLong, short: nextShort }, comment: "GENERATED_ALGORITHM" }, ...items]);
+    setNotice("Long Grid и Short Grid заменены generated configuration");
+  };
+  useEffect(() => {
+    const applyOne = (event: Event) => { const detail = (event as CustomEvent<{ side: Side; orders: GridOrder[]; active: number }>).detail; applyGenerated(detail.side, detail.orders, detail.active); };
+    const applyBoth = (event: Event) => { const detail = (event as CustomEvent<{ long: GridOrder[]; longActive: number; short: GridOrder[]; shortActive: number }>).detail; applyGeneratedBoth(detail.long, detail.longActive, detail.short, detail.shortActive); };
+    window.addEventListener("manual-grid-apply", applyOne); window.addEventListener("manual-grid-apply-both", applyBoth);
+    return () => { window.removeEventListener("manual-grid-apply", applyOne); window.removeEventListener("manual-grid-apply-both", applyBoth); };
+  });
   const draftSnapshot = (updatedAt = new Date().toISOString()): StoredDraft => ({ allocation, long, short, activeLong, activeShort, enabledLong, enabledShort, generatedLong, generatedShort, planningLeverage, mobileSide, page, updatedAt });
   const saveCurrentDraft = (symbol = account.symbol) => { const updatedAt = new Date().toISOString(); const result = saveDraft(symbol, draftSnapshot(updatedAt)); if (result.ok) { setLocalSavedAt(updatedAt); setLocalSaveFailed(false); } else { setLocalSavedAt(null); setLocalSaveFailed(true); setNotice("Не удалось сохранить локальный черновик"); } return result; };
   const restoreDraft = (stored: StoredDraft | null) => { const next = stored ?? emptyDraft(); setAllocation(next.allocation); setLong(next.long); setShort(next.short); setActiveLong(next.activeLong); setActiveShort(next.activeShort); setEnabledLong(next.enabledLong); setEnabledShort(next.enabledShort); setGeneratedLong(next.generatedLong); setGeneratedShort(next.generatedShort); setPlanningLeverage(next.planningLeverage); setMobileSide(next.mobileSide); setPage(next.page ?? "constructor"); setLocalSavedAt(stored ? next.updatedAt : null); };

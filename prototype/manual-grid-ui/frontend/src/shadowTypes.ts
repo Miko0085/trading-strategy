@@ -21,7 +21,7 @@ export type ShadowProposal = {
   symbol: string;
   capital_snapshot: Record<string, string | null>;
   budgets: Record<string, string>;
-  sides: Record<string, { status: string; budget: string; planned_margin?: string; orders: Array<{ level: number; entry_price: string; qty: string; status: string; validation_errors: string[] }> }>;
+  sides: Record<string, { status: string; budget: string; active_order_count?: number; planned_margin?: string; orders: Array<{ level: number; entry_price: string; qty: string; filled_qty?: string; actual_avg_fill?: string | null; planned_tp?: Array<{ move_pct?: string; close_pct?: string; price?: string }>; source?: string; manual_price_lock?: boolean; manual_qty_lock?: boolean; validation_errors: string[] }> }>;
   validation: { state: string };
 };
 

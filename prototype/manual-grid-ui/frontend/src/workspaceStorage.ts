@@ -60,7 +60,7 @@ function order(value: unknown): GridOrder | null {
   if (!item || typeof item.id !== "string" || (item.side !== "long" && item.side !== "short") || typeof item.level !== "number" || !Number.isFinite(item.level) || !numberOrNull(item.offsetPct) || !numberOrNull(item.qty) || typeof item.filledQty !== "number" || !Number.isFinite(item.filledQty) || !numberOrNull(item.avgFill) || !Array.isArray(item.tps) || typeof item.note !== "string") return null;
   const tps = item.tps.map((value) => { const tp = record(value); return tp && numberOrNull(tp.movePct) && numberOrNull(tp.closePct) ? { movePct: tp.movePct, closePct: tp.closePct } : null; });
   if (tps.some((value) => value === null)) return null;
-  return { id: item.id, side: item.side, level: item.level, offsetPct: item.offsetPct, qty: item.qty, filledQty: item.filledQty, avgFill: item.avgFill, tps: tps as TP[], note: item.note };
+  return { id: item.id, side: item.side, level: item.level, offsetPct: item.offsetPct, qty: item.qty, filledQty: item.filledQty, avgFill: item.avgFill, tps: tps as TP[], note: item.note, source: item.source === "GENERATED_ALGORITHM" || item.source === "MANUAL" ? item.source : undefined, calculatedEntryPrice: numberOrNull(item.calculatedEntryPrice) ? item.calculatedEntryPrice : undefined, manualOverrideMetadata: record(item.manualOverrideMetadata) ?? undefined };
 }
 function draft(value: unknown): StoredDraft | null {
   const item = record(value);

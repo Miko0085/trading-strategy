@@ -35,6 +35,13 @@ describe("local workspace storage", () => {
     expect(stored.drafts.BTCUSDT.authoritative).toBeUndefined();
   });
 
+  it("persists generated source metadata in the local draft", () => {
+    const draft = emptyDraft();
+    draft.long = [{ id: "generated-1", side: "long", level: 1, offsetPct: 10, qty: 2, filledQty: 1, avgFill: 80, tps: [{ movePct: 10, closePct: 50 }], note: "", source: "GENERATED_ALGORITHM", calculatedEntryPrice: 90, manualOverrideMetadata: { source: "ALGORITHM" } }];
+    saveDraft("BTCUSDT", draft);
+    expect(loadDraft("BTCUSDT")?.long[0]).toMatchObject({ source: "GENERATED_ALGORITHM", calculatedEntryPrice: 90, manualOverrideMetadata: { source: "ALGORITHM" } });
+  });
+
   it("falls back safely for corrupted and unknown versions", () => {
     window.localStorage.setItem(WORKSPACE_STORAGE_KEY, "not-json");
     expect(loadWorkspace().selectedSymbol).toBe("BTCUSDT");
