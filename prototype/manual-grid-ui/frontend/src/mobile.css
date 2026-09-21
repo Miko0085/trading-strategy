@@ -99,3 +99,27 @@
   .connection-card b{font-size:13px}
   .connection-card small{font-size:12px}
 }
+
+@media (max-width:760px){
+  .mobile-snapshot-grid span,.mobile-snapshot-details span{font-size:13px}
+  .mobile-snapshot-details b{font-size:13px}
+  .alloc-foot{font-size:14px}
+  .alloc-foot strong{font-size:15px}
+  .mobile-side-summary span,.mobile-side-summary small{font-size:13px}
+  .grid-summary span,.grid-summary small{font-size:14px}
+  .window-control{font-size:13px}
+  .order-inputs label,.order-inputs span{font-size:13px}
+  .order-inputs b{font-size:14px}
+  .risk-grid span{font-size:12px}
+  .risk-grid strong{font-size:13px}
+  .risk-meter>small{font-size:13px}
+  .tp-title{font-size:13px}
+  .tp-title span,.tp-title button{font-size:12px}
+  .tp-line b,.tp-line em,.tp-line small{font-size:14px}
+  .order-result{font-size:13px}
+  .state-card span{font-size:13px}
+  .state-card b{font-size:17px}
+  .state-order,.state-order strong{font-size:13px}
+  .connection-card b{font-size:14px}
+  .connection-card small{font-size:13px}
+}
