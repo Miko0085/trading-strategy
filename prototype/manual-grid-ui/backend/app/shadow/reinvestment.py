@@ -6,6 +6,27 @@ from decimal import Decimal
 ZERO = Decimal("0")
 
 
+def calculate_net_realized_profit(
+    realized_pnl: Decimal | None,
+    fee: Decimal | None,
+    *,
+    realized_pnl_is_net: bool = False,
+) -> dict[str, Decimal | str | None]:
+    """Normalize one factual close result without inventing missing values.
+
+    Bybit execution PnL semantics must be supplied by the caller.  When it is
+    known to be net, the value is used as-is and gross PnL remains unknown.
+    When it is gross, a fee is required before a net profit is produced.
+    """
+    if realized_pnl is None:
+        return {"gross_realized_pnl": None, "fee": fee, "net_realized_profit": None, "calculation_quality": "MISSING_REALIZED_PNL"}
+    if realized_pnl_is_net:
+        return {"gross_realized_pnl": None, "fee": fee, "net_realized_profit": realized_pnl, "calculation_quality": "BYBIT_EXEC_PNL_ASSUMED_NET"}
+    if fee is None:
+        return {"gross_realized_pnl": realized_pnl, "fee": None, "net_realized_profit": None, "calculation_quality": "MISSING_FEE"}
+    return {"gross_realized_pnl": realized_pnl, "fee": fee, "net_realized_profit": realized_pnl - fee, "calculation_quality": "GROSS_PNL_MINUS_FEE"}
+
+
 def realized_reinvest_amount(net_realized_profit: Decimal | None, reinvest_pct: Decimal) -> Decimal:
     """Persistent compounding from a confirmed positive net realized result."""
     if net_realized_profit is None or net_realized_profit <= ZERO or reinvest_pct <= ZERO:
@@ -24,7 +45,7 @@ def calculate_effective_side_budget(
     long_realized_reinvest_pct: Decimal = ZERO, short_realized_reinvest_pct: Decimal = ZERO,
     long_unrealized_pnl: Decimal | None = None, short_unrealized_pnl: Decimal | None = None,
     long_unrealized_reinvest_pct: Decimal = ZERO, short_unrealized_reinvest_pct: Decimal = ZERO,
-) -> dict[str, Decimal]:
+) -> dict[str, Decimal | str | None]:
     """Return persistent deposits and temporary boosts with reserve protection.
 
     Deposit growth is applied first.  Floating PnL is only a temporary boost;

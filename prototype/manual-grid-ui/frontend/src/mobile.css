@@ -36,90 +36,52 @@
 }
 
 .mobile-draft-status{color:var(--muted);font-size:10px;margin-top:8px}.mobile-snapshot-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.mobile-reset-draft,.draft-reset{border:0;background:transparent;color:var(--muted);font-size:10px;padding:6px 0;text-decoration:underline;text-underline-offset:3px}.mobile-reset-draft{color:#ff9aab}
-@media(max-width:760px){.generated-grid{grid-template-columns:1fr}.generated-fields{grid-template-columns:repeat(2,1fr)}.generated-heading{flex-direction:column}.generated-heading .save{width:100%;min-height:44px}.shadow-sides{grid-template-columns:1fr}}
-/* Keep the mobile reading scale aligned with the desktop UI. */
-@media (max-width:760px){
-  .mobile-header-main span,.mobile-header-meta{font-size:11px}
-  .mobile-snapshot-grid span,.mobile-snapshot-details span{font-size:10px}
-  .mobile-snapshot-grid b{font-size:13px}
-  .mobile-details-toggle{font-size:12px}
-  .alloc-foot{font-size:11px}
-  .grid-summary span,.order-inputs label{font-size:11px}
-  .order-result{font-size:10px}
-  .add-order{font-size:13px}
+@media(max-width:760px){
+  .generated-panel{display:flex;flex-direction:column}
+  .generated-heading{display:contents}
+  .generated-heading>div{order:1}
+  .generated-grid{order:2;grid-template-columns:1fr}
+  .generated-heading .save{order:3;width:100%;min-height:44px;margin-top:12px}
+  .generated-panel>.strategy-sides-warning{order:4}
+  .generated-panel>.shadow-result{order:5}
+  .generated-fields{grid-template-columns:repeat(2,1fr)}
+  .shadow-sides{grid-template-columns:1fr}
 }
 
+@media (max-width:760px){
+  /* Keep the overall calculation readable at the same scale as both grid columns. */
+  .center-panel{font-size:15px}
+  .center-heading small,.position-head,.position-values span,.plan-box span{font-size:14px}
+  .mobile-calc-summary span{font-size:13px}
+  .mobile-calc-summary b,.position-values b,.plan-box b{font-size:15px}
+  .position-values small{font-size:13px}
+  .ladder-title,.rung,.mark-line{font-size:14px}
+  .guard{font-size:14px}
+  .guard small{font-size:13px}
+}
 @media (max-width:760px){.mobile-header .theme-toggle{display:flex;min-height:36px;padding:7px 8px;font-size:0}.mobile-header .theme-toggle span{display:none}.mobile-header .theme-toggle svg{width:17px;height:17px}.account-strip>.theme-toggle{display:none}}
 
 @media (max-width:760px){
-  /* Increase only inner/card text; the mobile header and page titles stay unchanged. */
-  .mobile-snapshot-grid span,.mobile-snapshot-details span{font-size:11px}
-  .mobile-snapshot-details b{font-size:11px}
-  .alloc-foot{font-size:12px}
-  .alloc-foot strong{font-size:13px}
-  .mobile-side-summary span,.mobile-side-summary small{font-size:11px}
-  .grid-summary span,.grid-summary small{font-size:12px}
-  .window-control{font-size:11px}
-  .order-inputs label,.order-inputs span{font-size:11px}
-  .order-inputs b{font-size:12px}
-  .risk-grid span{font-size:10px}
-  .risk-grid strong{font-size:11px}
-  .risk-meter>small{font-size:11px}
-  .tp-title{font-size:11px}
-  .tp-title span,.tp-title button{font-size:10px}
-  .tp-line b,.tp-line em,.tp-line small{font-size:12px}
-  .order-result{font-size:11px}
-  .state-card span{font-size:11px}
-  .state-card b{font-size:15px}
-  .state-order,.state-order strong{font-size:11px}
-  .connection-card b{font-size:12px}
-  .connection-card small{font-size:11px}
-}
-
-@media (max-width:760px){
-  .mobile-snapshot-grid span,.mobile-snapshot-details span{font-size:12px}
-  .mobile-snapshot-details b{font-size:12px}
-  .alloc-foot{font-size:13px}
-  .alloc-foot strong{font-size:14px}
-  .mobile-side-summary span,.mobile-side-summary small{font-size:12px}
-  .grid-summary span,.grid-summary small{font-size:13px}
-  .window-control{font-size:12px}
-  .order-inputs label,.order-inputs span{font-size:12px}
-  .order-inputs b{font-size:13px}
-  .risk-grid span{font-size:11px}
-  .risk-grid strong{font-size:12px}
-  .risk-meter>small{font-size:12px}
-  .tp-title{font-size:12px}
-  .tp-title span,.tp-title button{font-size:11px}
-  .tp-line b,.tp-line em,.tp-line small{font-size:13px}
-  .order-result{font-size:12px}
-  .state-card span{font-size:12px}
-  .state-card b{font-size:16px}
-  .state-order,.state-order strong{font-size:12px}
-  .connection-card b{font-size:13px}
-  .connection-card small{font-size:12px}
-}
-
-@media (max-width:760px){
+  /* Inner block typography follows the readable Plan/Grid/Generated Grid scale. */
+  .allocation-panel,.grid-column,.risk-meter,.order-card,.tp-section,.state-view,.generated-panel{font-size:15px}
   .mobile-snapshot-grid span,.mobile-snapshot-details span{font-size:13px}
-  .mobile-snapshot-details b{font-size:13px}
-  .alloc-foot{font-size:14px}
-  .alloc-foot strong{font-size:15px}
-  .mobile-side-summary span,.mobile-side-summary small{font-size:13px}
-  .grid-summary span,.grid-summary small{font-size:14px}
-  .window-control{font-size:13px}
-  .order-inputs label,.order-inputs span{font-size:13px}
-  .order-inputs b{font-size:14px}
-  .risk-grid span{font-size:12px}
-  .risk-grid strong{font-size:13px}
-  .risk-meter>small{font-size:13px}
-  .tp-title{font-size:13px}
-  .tp-title span,.tp-title button{font-size:12px}
+  .mobile-snapshot-grid b,.mobile-snapshot-details b{font-size:14px}
+  .alloc-foot,.mobile-side-summary span,.mobile-side-summary small,.grid-summary span,.grid-summary small{font-size:14px}
+  .alloc-foot strong,.grid-summary b,.mobile-side-summary strong{font-size:15px}
+  .window-control,.order-inputs label,.order-inputs span{font-size:14px}
+  .order-inputs b{font-size:15px}
+  .risk-grid span,.risk-meter>small{font-size:13px}
+  .risk-grid strong{font-size:14px}
+  .tp-title{font-size:14px}
+  .tp-title span,.tp-title button{font-size:13px}
   .tp-line b,.tp-line em,.tp-line small{font-size:14px}
-  .order-result{font-size:13px}
-  .state-card span{font-size:13px}
+  .order-result{font-size:14px}
+  .state-card span{font-size:14px}
   .state-card b{font-size:17px}
-  .state-order,.state-order strong{font-size:13px}
-  .connection-card b{font-size:14px}
-  .connection-card small{font-size:13px}
+  .state-order,.state-order strong{font-size:14px}
+  .connection-card b{font-size:15px}
+  .connection-card small{font-size:14px}
+  .generated-side-head,.generated-field,.experimental-line{font-size:14px}
+  .generated-field input{font-size:15px}
+  .shadow-result{font-size:14px}
 }

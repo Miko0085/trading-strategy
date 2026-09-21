@@ -37,7 +37,7 @@ export type StorageDiagnostic = {
 };
 
 export function emptyDraft(): StoredDraft {
-  return { allocation: { longPct: null, shortPct: null, reservePct: null }, long: [], short: [], activeLong: 0, activeShort: 0, enabledLong: true, enabledShort: true, generatedLong: defaultGeneratedSide(true, 30), generatedShort: defaultGeneratedSide(false, 20), planningLeverage: null, mobileSide: "long", page: "constructor", updatedAt: new Date(0).toISOString() };
+  return { allocation: { longPct: null, shortPct: null, reservePct: null }, long: [], short: [], activeLong: 0, activeShort: 0, enabledLong: true, enabledShort: true, generatedLong: defaultGeneratedSide(true), generatedShort: defaultGeneratedSide(false), planningLeverage: null, mobileSide: "long", page: "constructor", updatedAt: new Date(0).toISOString() };
 }
 
 export function emptyWorkspace(): StoredWorkspace {
@@ -70,8 +70,22 @@ function draft(value: unknown): StoredDraft | null {
   if (long.some((value) => value === null) || short.some((value) => value === null)) return null;
   const generatedLong = record(item.generatedLong);
   const generatedShort = record(item.generatedShort);
-  const generated = (value: Record<string, unknown> | null, fallback: GeneratedSideConfig): GeneratedSideConfig => value && typeof value.orderCount === "number" && typeof value.gridDepthPct === "number" && typeof value.firstOrderOffsetPct === "number" && typeof value.distributionCoefficient === "number" && typeof value.leverage === "number" && typeof value.martingaleCoefficient === "number" && typeof value.allocationPct === "number" && typeof value.activeOrderCount === "number" && Array.isArray(value.tpSteps) ? { ...fallback, ...(value as Partial<GeneratedSideConfig>) } : fallback;
-  return { allocation: itemAllocation, long: long as GridOrder[], short: short as GridOrder[], activeLong: item.activeLong, activeShort: item.activeShort, enabledLong: item.enabledLong ?? true, enabledShort: item.enabledShort ?? true, generatedLong: generated(generatedLong, defaultGeneratedSide(true, 30)), generatedShort: generated(generatedShort, defaultGeneratedSide(false, 20)), planningLeverage: item.planningLeverage, mobileSide: item.mobileSide, page: item.page, updatedAt: item.updatedAt };
+  const generated = (value: Record<string, unknown> | null, fallback: GeneratedSideConfig, side: Side): GeneratedSideConfig => {
+    if (!value || typeof value.orderCount !== "number" || typeof value.gridDepthPct !== "number" || typeof value.firstOrderOffsetPct !== "number" || typeof value.distributionCoefficient !== "number" || typeof value.leverage !== "number" || typeof value.activeOrderCount !== "number" || !Array.isArray(value.tpSteps)) return fallback;
+    const legacyMultiplier = typeof value.martingaleCoefficient === "number" ? value.martingaleCoefficient : undefined;
+    const legacyUnrealized = typeof value.unrealizedReinvestPct === "number" ? value.unrealizedReinvestPct : undefined;
+    const migrated: Partial<GeneratedSideConfig> = {
+      ...(value as Partial<GeneratedSideConfig>),
+      martingaleMultiplier: legacyMultiplier ?? (typeof value.martingaleMultiplier === "number" ? value.martingaleMultiplier : undefined),
+      ...(side === "long" && legacyUnrealized !== undefined ? { longUnrealizedReinvestPct: legacyUnrealized } : {}),
+      ...(side === "short" && legacyUnrealized !== undefined ? { shortUnrealizedReinvestPct: legacyUnrealized } : {}),
+    };
+    delete (migrated as Record<string, unknown>).allocationPct;
+    delete (migrated as Record<string, unknown>).martingaleCoefficient;
+    delete (migrated as Record<string, unknown>).unrealizedReinvestPct;
+    return { ...fallback, ...migrated };
+  };
+  return { allocation: itemAllocation, long: long as GridOrder[], short: short as GridOrder[], activeLong: item.activeLong, activeShort: item.activeShort, enabledLong: item.enabledLong ?? true, enabledShort: item.enabledShort ?? true, generatedLong: generated(generatedLong, defaultGeneratedSide(true), "long"), generatedShort: generated(generatedShort, defaultGeneratedSide(false), "short"), planningLeverage: item.planningLeverage, mobileSide: item.mobileSide, page: item.page, updatedAt: item.updatedAt };
 }
 
 export function loadWorkspace(): StoredWorkspace {

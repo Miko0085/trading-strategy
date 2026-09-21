@@ -49,6 +49,17 @@ describe("local workspace storage", () => {
     expect(loadWorkspace().selectedSymbol).toBe("BTCUSDT");
   });
 
+  it("migrates legacy generated allocation and martingale fields without using them as canonical state", () => {
+    const legacy = emptyDraft() as Record<string, unknown>;
+    legacy.generatedLong = { ...legacy.generatedLong as object, martingaleCoefficient: 1.5, allocationPct: 99, unrealizedReinvestPct: 12 };
+    const workspace = { version: 1, selectedSymbol: "BTCUSDT", drafts: { BTCUSDT: legacy } };
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
+    const loaded = loadDraft("BTCUSDT");
+    expect(loaded?.generatedLong.martingaleMultiplier).toBe(1.5);
+    expect(loaded?.generatedLong.longUnrealizedReinvestPct).toBe(12);
+    expect(loaded?.generatedLong).not.toHaveProperty("allocationPct");
+  });
+
   it("removes only the requested symbol draft", () => {
     saveDraft("BTCUSDT", emptyDraft()); saveDraft("ETHUSDT", emptyDraft());
     removeDraft("BTCUSDT");

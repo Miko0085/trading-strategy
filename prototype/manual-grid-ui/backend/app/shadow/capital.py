@@ -36,14 +36,18 @@ def side_budgets(
     short_pct: Decimal,
     reserve_pct: Decimal,
     *,
-    long_to_short_reinvestment_pct: Decimal = Decimal("0"),
-    short_to_long_reinvestment_pct: Decimal = Decimal("0"),
+    long_unrealized_reinvest_pct: Decimal | None = None,
+    short_unrealized_reinvest_pct: Decimal | None = None,
     long_unrealized_pnl: Decimal = Decimal("0"),
     short_unrealized_pnl: Decimal = Decimal("0"),
     long_realized_reinvest_pct: Decimal = Decimal("0"),
     short_realized_reinvest_pct: Decimal = Decimal("0"),
     previous_long_strategy_deposit: Decimal | None = None,
     previous_short_strategy_deposit: Decimal | None = None,
+    # Compatibility aliases for revisions created before the canonical names.
+    long_to_short_reinvestment_pct: Decimal | None = None,
+    short_to_long_reinvestment_pct: Decimal | None = None,
+    include_metadata: bool = False,
 ) -> dict[str, Decimal]:
     """Return the one canonical capital allocation policy.
 
@@ -54,16 +58,19 @@ def side_budgets(
     total_pct = long_pct + short_pct + reserve_pct
     if snapshot.capital_base is None or total_pct > 100 or min(long_pct, short_pct, reserve_pct) < 0:
         raise ValueError("capital base and allocation percentages are required")
+    # Canonical direction: long boost comes from positive short uPnL.
+    long_boost_pct = long_unrealized_reinvest_pct if long_unrealized_reinvest_pct is not None else (short_to_long_reinvestment_pct or Decimal("0"))
+    short_boost_pct = short_unrealized_reinvest_pct if short_unrealized_reinvest_pct is not None else (long_to_short_reinvestment_pct or Decimal("0"))
     effective = calculate_effective_side_budget(
         capital_base=snapshot.capital_base, long_pct=long_pct, short_pct=short_pct, reserve_pct=reserve_pct,
         previous_long_deposit=previous_long_strategy_deposit, previous_short_deposit=previous_short_strategy_deposit,
         long_realized_reinvest_pct=long_realized_reinvest_pct, short_realized_reinvest_pct=short_realized_reinvest_pct,
         long_unrealized_pnl=long_unrealized_pnl, short_unrealized_pnl=short_unrealized_pnl,
-        long_unrealized_reinvest_pct=short_to_long_reinvestment_pct, short_unrealized_reinvest_pct=long_to_short_reinvestment_pct,
+        long_unrealized_reinvest_pct=long_boost_pct, short_unrealized_reinvest_pct=short_boost_pct,
     )
-    result = {
-        "long": effective["long"], "short": effective["short"], "reserve": effective["reserve"],
-    }
+    result = {"long": effective["long"], "short": effective["short"], "reserve": effective["reserve"]}
+    if include_metadata:
+        result.update({key: effective[key] for key in ("base_long_budget", "base_short_budget", "long_strategy_deposit", "short_strategy_deposit", "long_unrealized_boost", "short_unrealized_boost")})
     if effective["long_unrealized_requested"] or effective["short_unrealized_requested"]:
         result["long_extra"] = effective["long_unrealized_boost"]
         result["short_extra"] = effective["short_unrealized_boost"]

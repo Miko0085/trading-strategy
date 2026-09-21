@@ -25,6 +25,12 @@ def test_normalized_account_keeps_factual_mode_and_symbol():
     assert result["position_mode_symbol"] == "ETHUSDT"
 
 
+def test_normalized_account_exposes_side_specific_unrealized_pnl_without_total_fallback():
+    result = normalize_account({"list": [{"totalPerpUPL": "999"}]}, {"list": [{"symbol": "ETHUSDT", "side": "Buy", "positionIdx": 1, "size": "1", "unrealisedPnl": "100"}]}, {"list": []}, {"list": [{"symbol": "ETHUSDT", "markPrice": "100"}]}, {"symbol": "ETHUSDT"}, "bybit_read_only")
+    assert result["long_unrealized_pnl"] == "100"
+    assert result["short_unrealized_pnl"] is None
+
+
 def test_hedge_allows_both_and_one_way_allows_each_single_side():
     assert calculate_configuration(config("HEDGE"), instrument=INSTRUMENT)["validation_state"] == "VALID"
     assert calculate_configuration(config("HEDGE", enabled_short=False), instrument=INSTRUMENT)["validation_state"] == "VALID"

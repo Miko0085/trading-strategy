@@ -15,7 +15,7 @@ from .calculations import calculate_configuration
 from .config import Settings
 from .db import RevisionRepository
 from .schemas import GridConfigurationDTO, SaveRevisionDTO
-from .shadow.engine import evaluate_restructuring, generate_grid
+from .shadow.engine import apply_realized_execution, evaluate_restructuring, generate_grid
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -168,6 +168,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, str(exc)) from exc
         except ReadOnlyBybitError as exc:
             raise HTTPException(503, "Нет подтверждённого состояния аккаунта Bybit") from exc
+
+    @app.post("/api/shadow/apply-realized-execution")
+    async def shadow_apply_realized_execution(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return jsonable_encoder(apply_realized_execution(payload["current"], execution=payload["execution"], configuration=payload["configuration"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/shadow/revisions")
     async def save_shadow_revision(payload: dict[str, Any]) -> dict[str, Any]:

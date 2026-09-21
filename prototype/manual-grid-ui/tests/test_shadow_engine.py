@@ -1,13 +1,13 @@
 from decimal import Decimal
 
 from app.shadow.capital import capital_snapshot, side_budgets
-from app.shadow.engine import evaluate_restructuring, generate_grid
+from app.shadow.engine import apply_realized_execution, evaluate_restructuring, generate_grid
 from app.shadow.geometry import distribution_vector, geometry_proportions
 from app.shadow.lots import apply_fill, tp_prices, tp_quantities
 from app.shadow.sizing import normalized_weights, planned_margin, quantity_for_budget
 from app.shadow.overrides import apply_field_overrides
 from app.shadow.trailing import trail_pending_grid
-from app.shadow.reinvestment import calculate_effective_side_budget, next_strategy_deposit, realized_reinvest_amount
+from app.shadow.reinvestment import calculate_effective_side_budget, calculate_net_realized_profit, next_strategy_deposit, realized_reinvest_amount
 
 
 INSTRUMENT = {"tick_size": "0.1", "qty_step": "0.1", "min_order_qty": "0.1", "min_notional_value": "5"}
@@ -185,3 +185,59 @@ def test_realized_deposit_is_persistent_but_unrealized_boost_is_temporary_and_ca
     result = calculate_effective_side_budget(capital_base=Decimal("10000"), long_pct=Decimal("30"), short_pct=Decimal("30"), reserve_pct=Decimal("30"), long_unrealized_pnl=Decimal("1000"), short_unrealized_pnl=Decimal("1000"), long_unrealized_reinvest_pct=Decimal("100"), short_unrealized_reinvest_pct=Decimal("100"))
     assert result["reserve"] == Decimal("3000")
     assert result["long"] + result["short"] <= Decimal("7000")
+
+
+def test_net_realized_profit_requires_explicit_fee_semantics():
+    assert calculate_net_realized_profit(Decimal("100"), Decimal("2")) ["net_realized_profit"] == Decimal("98")
+    assert calculate_net_realized_profit(Decimal("98"), Decimal("2"), realized_pnl_is_net=True)["net_realized_profit"] == Decimal("98")
+    assert calculate_net_realized_profit(Decimal("100"), None)["net_realized_profit"] is None
+
+
+def test_realized_close_updates_persistent_deposit_and_deduplicates_execution():
+    current = generate_grid(account=account(), configuration=configuration(), instrument=INSTRUMENT)
+    config = configuration()
+    config["long"]["realized_reinvest_pct"] = "50"
+    execution = {"execution_id": "close-1", "side": "Buy", "trigger": "TP_PARTIAL_FILL", "realized_pnl": "100", "fee": "0"}
+    first = apply_realized_execution(current, execution=execution, configuration=config)
+    assert first["strategy_state"]["long_strategy_deposit"] == "350"
+    replay = apply_realized_execution(first, execution=execution, configuration=config)
+    assert replay["strategy_state"]["long_strategy_deposit"] == "350"
+    assert len(replay["strategy_state"]["reinvest_audit"]) == 1
+
+
+def test_realized_reinvest_is_side_specific_and_negative_profit_does_not_change_deposit():
+    current = generate_grid(account=account(), configuration=configuration(), instrument=INSTRUMENT)
+    config = configuration()
+    config["long"]["realized_reinvest_pct"] = "50"
+    negative = apply_realized_execution(current, execution={"execution_id": "close-2", "side": "Buy", "trigger": "MANUAL_FULL_CLOSE", "realized_pnl": "-100", "fee": "0"}, configuration=config)
+    assert negative["strategy_state"]["long_strategy_deposit"] == "300"
+    short = apply_realized_execution(negative, execution={"execution_id": "close-3", "side": "Sell", "trigger": "TP_FULL_FILL", "realized_pnl": "100", "fee": "0"}, configuration=config)
+    assert short["strategy_state"]["short_strategy_deposit"] == "200"
+    assert short["strategy_state"]["long_strategy_deposit"] == "300"
+
+
+def test_restructuring_starts_from_persisted_strategy_deposit():
+    current = generate_grid(account=account(), configuration=configuration(), instrument=INSTRUMENT)
+    config = configuration()
+    config["allocation"]["reserve_pct"] = "20"
+    config["long"]["realized_reinvest_pct"] = "50"
+    current = apply_realized_execution(current, execution={"execution_id": "close-4", "side": "Buy", "trigger": "TP_FULL_FILL", "realized_pnl": "100", "fee": "0"}, configuration=config)
+    revised = evaluate_restructuring(current, trigger="CAPITAL_STATE_CHANGE", account=account(), configuration=config, instrument=INSTRUMENT)["after"]
+    assert revised["strategy_state"]["long_strategy_deposit"] == "350"
+    assert revised["shadow_summary"]["long"]["strategy_deposit"] == "350"
+
+
+def test_canonical_unrealized_direction_uses_opposite_side_only():
+    snapshot = capital_snapshot(account("1000"))
+    budgets = side_budgets(snapshot, Decimal("20"), Decimal("20"), Decimal("40"), long_unrealized_reinvest_pct=Decimal("10"), short_unrealized_reinvest_pct=Decimal("20"), long_unrealized_pnl=Decimal("100"), short_unrealized_pnl=Decimal("500"))
+    assert budgets["long"] - Decimal("200") == Decimal("50")
+    assert budgets["short"] - Decimal("200") == Decimal("20")
+
+
+def test_generated_side_allocation_is_ignored_in_favor_of_global_policy_and_old_multiplier_loads():
+    config = configuration()
+    config["long"]["allocation_pct"] = "99"
+    config["long"]["martingale_coefficient"] = "1.5"
+    result = generate_grid(account=account(), configuration=config, instrument=INSTRUMENT)
+    assert result["sides"]["long"]["budget"] == Decimal("300")
+    assert result["sides"]["long"]["martingale_multiplier"] == Decimal("1.5")
