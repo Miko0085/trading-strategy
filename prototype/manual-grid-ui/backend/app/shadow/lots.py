@@ -3,6 +3,28 @@ from __future__ import annotations
 from decimal import Decimal
 
 
+def apply_execution_to_shadow_order(order: dict[str, object], execution: dict[str, object]) -> dict[str, object]:
+    """Apply one factual fill idempotently; never invent an order mapping."""
+    execution_id = execution.get("execution_id") or execution.get("execId")
+    executions = order.setdefault("executions", [])
+    if execution_id and any(item.get("execution_id") == execution_id for item in executions if isinstance(item, dict)):
+        return order
+    qty = Decimal(str(execution.get("qty") or execution.get("execQty") or "0"))
+    price = Decimal(str(execution.get("price") or execution.get("execPrice") or "0"))
+    if qty <= 0 or price <= 0:
+        raise ValueError("execution qty and price must be positive")
+    configured = Decimal(str(order.get("configured_qty", order.get("qty", "0"))))
+    apply_fill(order, qty, price)
+    filled = Decimal(str(order["filled_qty"]))
+    order["configured_qty"] = max(configured, filled)
+    order["qty"] = order["configured_qty"]
+    order["remaining_entry_qty"] = max(Decimal("0"), order["configured_qty"] - filled)
+    executions.append({"execution_id": execution_id, **execution})
+    lots = order.setdefault("strategy_lots", [])
+    lots.append({"execution_id": execution_id, "qty": qty, "price": price, "attribution": "FACTUAL"})
+    return order
+
+
 def apply_fill(lot: dict[str, object], fill_qty: Decimal, fill_price: Decimal) -> dict[str, object]:
     if fill_qty <= 0 or fill_price <= 0:
         raise ValueError("fill_qty and fill_price must be positive")

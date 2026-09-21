@@ -13,6 +13,8 @@ export type GeneratedSideConfig = {
   trailingEnabled: boolean;
   trailingOffsetPct: number;
   oppositeUpnlReinvestmentPct: number;
+  realizedReinvestPct: number;
+  unrealizedReinvestPct: number;
   manualOverrides: Array<{ level: number; field: "entry_price" | "qty" | "planned_tp"; value: number | string }>;
 };
 
@@ -26,5 +28,5 @@ export type ShadowProposal = {
 };
 
 export function defaultGeneratedSide(enabled: boolean, allocationPct: number): GeneratedSideConfig {
-  return { enabled, orderCount: 10, gridDepthPct: 30, firstOrderOffsetPct: 5, distributionCoefficient: 1.5, leverage: 2, martingaleCoefficient: 1.2, sizingMode: "NORMALIZED_MARTINGALE", allocationPct, activeOrderCount: 3, tpSteps: [{ movePct: 10, closePct: 50 }], trailingEnabled: false, trailingOffsetPct: 0, oppositeUpnlReinvestmentPct: 0, manualOverrides: [] };
+  return { enabled, orderCount: 10, gridDepthPct: 30, firstOrderOffsetPct: 5, distributionCoefficient: 1.5, leverage: 2, martingaleCoefficient: 1.2, sizingMode: "NORMALIZED_MARTINGALE", allocationPct, activeOrderCount: 3, tpSteps: [{ movePct: 10, closePct: 50 }], trailingEnabled: false, trailingOffsetPct: 0, oppositeUpnlReinvestmentPct: 0, realizedReinvestPct: 0, unrealizedReinvestPct: 0, manualOverrides: [] };
 }

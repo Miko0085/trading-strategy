@@ -33,7 +33,7 @@ def generate_side(side: str, *, anchor_price: Decimal, budget: Decimal, order_co
         if price * quantity < min_notional:
             errors.append(f"notional must be >= {min_notional}")
         orders.append({"level": index + 1, "status": "VIRTUAL", "source": "ALGORITHM", "entry_price": price, "qty": quantity, "filled_qty": Decimal("0"), "open_qty": Decimal("0"), "closed_qty": Decimal("0"), "remaining_entry_qty": quantity, "actual_avg_fill": None, "strategy_lots": [], "executions": [], "planned_tp": deepcopy(tp_steps or []), "validation_errors": errors})
-    return {"side": side, "status": "VIRTUAL", "anchor_price": anchor_price, "martingale_coefficient": martingale_coefficient, "geometry": {"distances_pct": distances, "proportions": [distance / distances[-1] for distance in distances]}, "budget": budget, "planned_margin": planned_margin(prices, quantities, leverage), "active_order_count": min(active_order_count, order_count), "orders": orders, "strategy_lots": [], "executions": []}
+    return {"side": side, "status": "VIRTUAL", "anchor_price": anchor_price, "martingale_coefficient": martingale_coefficient, "min_notional_value": min_notional, "geometry": {"distances_pct": distances, "proportions": [distance / distances[-1] for distance in distances]}, "budget": budget, "planned_margin": planned_margin(prices, quantities, leverage), "active_order_count": min(active_order_count, order_count), "orders": orders, "strategy_lots": [], "executions": []}
 
 
 def generate_grid(*, account: dict[str, object], configuration: dict[str, Any], instrument: dict[str, object]) -> dict[str, Any]:
@@ -44,8 +44,10 @@ def generate_grid(*, account: dict[str, object], configuration: dict[str, Any], 
     reserve_pct = _decimal(allocation["reserve_pct"]) if allocation.get("reserve_pct") not in (None, "") else Decimal("100") - long_pct - short_pct
     budgets = side_budgets(
         snapshot, long_pct, short_pct, reserve_pct,
-        long_to_short_reinvestment_pct=_decimal(configuration.get("long_to_short_reinvestment_pct", configuration["long"].get("opposite_upnl_reinvestment_pct", "0"))),
-        short_to_long_reinvestment_pct=_decimal(configuration.get("short_to_long_reinvestment_pct", configuration["short"].get("opposite_upnl_reinvestment_pct", "0"))),
+        long_to_short_reinvestment_pct=_decimal(configuration.get("long_to_short_reinvestment_pct", configuration["long"].get("unrealized_reinvest_pct", configuration["long"].get("opposite_upnl_reinvestment_pct", "0")))),
+        short_to_long_reinvestment_pct=_decimal(configuration.get("short_to_long_reinvestment_pct", configuration["short"].get("unrealized_reinvest_pct", configuration["short"].get("opposite_upnl_reinvestment_pct", "0")))),
+        long_realized_reinvest_pct=_decimal(configuration["long"].get("realized_reinvest_pct", "0")),
+        short_realized_reinvest_pct=_decimal(configuration["short"].get("realized_reinvest_pct", "0")),
         long_unrealized_pnl=_decimal(account.get("long_unrealized_pnl", account.get("unrealized_pnl", "0"))),
         short_unrealized_pnl=_decimal(account.get("short_unrealized_pnl", account.get("unrealized_pnl", "0"))),
     )
@@ -75,9 +77,16 @@ def generate_grid(*, account: dict[str, object], configuration: dict[str, Any], 
 
 def _used_capital(orders: list[dict[str, Any]], leverage: Decimal) -> Decimal:
     return sum((
-        _decimal(order.get("filled_qty", "0")) * _decimal(order.get("actual_avg_fill") or order.get("entry_price", "0")) / leverage
+        max(Decimal("0"), _decimal(order.get("open_qty", _decimal(order.get("filled_qty", "0")) - _decimal(order.get("closed_qty", "0"))))) * _decimal(order.get("actual_avg_fill") or order.get("entry_price", "0")) / leverage
         for order in orders if _decimal(order.get("filled_qty", "0")) > 0
     ), Decimal("0"))
+
+
+def is_future_resizable(order: dict[str, Any]) -> bool:
+    """Only future intent may be resized; factual fills and manual locks stay fixed."""
+    filled = _decimal(order.get("filled_qty", "0"))
+    target = _decimal(order.get("configured_qty", order.get("qty", "0")))
+    return not order.get("manual_qty_lock", False) and filled < target
 
 
 def _restructure_side(side_state: dict[str, Any], *, budget: Decimal, leverage: Decimal, qty_step: Decimal, min_order_qty: Decimal, trigger: str, new_anchor: Decimal | None, tick_size: Decimal) -> dict[str, Any]:
@@ -92,11 +101,11 @@ def _restructure_side(side_state: dict[str, Any], *, budget: Decimal, leverage: 
     factual_used = _used_capital(orders, leverage)
     remaining = max(Decimal("0"), budget - factual_used)
     locked_future = sum((
-        _decimal(order.get("entry_price", "0")) * _decimal(order.get("qty", "0")) / leverage
+        _decimal(order.get("entry_price", "0")) * max(Decimal("0"), _decimal(order.get("qty", "0")) - _decimal(order.get("filled_qty", "0"))) / leverage
         for order in orders
-        if _decimal(order.get("filled_qty", "0")) == 0 and order.get("manual_qty_lock", False)
+        if is_future_resizable(order) is False and _decimal(order.get("filled_qty", "0")) < _decimal(order.get("qty", "0")) and order.get("manual_qty_lock", False)
     ), Decimal("0"))
-    auto = [order for order in orders if _decimal(order.get("filled_qty", "0")) == 0 and not order.get("manual_qty_lock", False)]
+    auto = [order for order in orders if is_future_resizable(order)]
     auto_budget = max(Decimal("0"), remaining - locked_future)
     prices = [_decimal(order["entry_price"]) for order in auto]
     if auto:
@@ -104,9 +113,28 @@ def _restructure_side(side_state: dict[str, Any], *, budget: Decimal, leverage: 
         coefficient = _decimal(side.get("martingale_coefficient", side.get("martingale_multiplier", "1.20")))
         weights = normalized_weights(len(auto), coefficient)
         raw = [(auto_budget * weight * leverage / price / qty_step).to_integral_value(rounding=ROUND_DOWN) * qty_step for weight, price in zip(weights, prices, strict=True)]
-        for order, qty in zip(auto, raw, strict=True):
-            order["qty"] = qty
-            order["remaining_entry_qty"] = qty
+        for order, future_qty in zip(auto, raw, strict=True):
+            filled = _decimal(order.get("filled_qty", "0"))
+            order["qty"] = filled + future_qty
+            order["configured_qty"] = filled + future_qty
+            order["remaining_entry_qty"] = future_qty
+    errors: list[str] = []
+    if locked_future > remaining:
+        errors.append("Ручные future-ордера превышают доступный budget стороны.")
+    min_notional = _decimal(side.get("min_notional_value", "0"))
+    for order in orders:
+        future_qty = max(Decimal("0"), _decimal(order.get("qty", "0")) - _decimal(order.get("filled_qty", "0")))
+        if future_qty <= 0:
+            continue
+        order_errors: list[str] = []
+        if (future_qty / qty_step).to_integral_value() * qty_step != future_qty:
+            order_errors.append(f"qty must follow qtyStep {qty_step}")
+        if future_qty < min_order_qty:
+            order_errors.append(f"qty must be >= {min_order_qty}")
+        if min_notional and _decimal(order.get("entry_price", "0")) * future_qty < min_notional:
+            order_errors.append(f"notional must be >= {min_notional}")
+        order["validation_errors"] = order_errors
+        errors.extend([f"Level {order.get('level')}: {item}" for item in order_errors])
     side["budget"] = budget
     side["factual_used_capital"] = factual_used
     side["locked_future_manual_capital"] = locked_future
@@ -114,6 +142,9 @@ def _restructure_side(side_state: dict[str, Any], *, budget: Decimal, leverage: 
     side["planned_margin"] = sum((_decimal(order.get("entry_price", "0")) * _decimal(order.get("qty", "0")) / leverage for order in orders), Decimal("0"))
     side["strategy_lots"] = deepcopy(side.get("strategy_lots", []))
     side["executions"] = deepcopy(side.get("executions", []))
+    side["validation_state"] = "BLOCKED" if errors else "VALID"
+    side["validation_errors"] = errors
+    side["status"] = "BLOCKED" if errors else side.get("status", "VIRTUAL")
     return side
 
 
@@ -127,8 +158,10 @@ def evaluate_restructuring(current: dict[str, Any], *, trigger: str, account: di
     short_pct = _decimal(configuration["short"].get("allocation_pct", allocation["short_pct"]))
     reserve_pct = _decimal(allocation.get("reserve_pct", Decimal("100") - long_pct - short_pct))
     budgets = side_budgets(snapshot, long_pct, short_pct, reserve_pct,
-        long_to_short_reinvestment_pct=_decimal(configuration.get("long_to_short_reinvestment_pct", configuration["long"].get("opposite_upnl_reinvestment_pct", "0"))),
-        short_to_long_reinvestment_pct=_decimal(configuration.get("short_to_long_reinvestment_pct", configuration["short"].get("opposite_upnl_reinvestment_pct", "0"))),
+        long_to_short_reinvestment_pct=_decimal(configuration.get("long_to_short_reinvestment_pct", configuration["long"].get("unrealized_reinvest_pct", configuration["long"].get("opposite_upnl_reinvestment_pct", "0")))),
+        short_to_long_reinvestment_pct=_decimal(configuration.get("short_to_long_reinvestment_pct", configuration["short"].get("unrealized_reinvest_pct", configuration["short"].get("opposite_upnl_reinvestment_pct", "0")))),
+        long_realized_reinvest_pct=_decimal(configuration["long"].get("realized_reinvest_pct", "0")),
+        short_realized_reinvest_pct=_decimal(configuration["short"].get("realized_reinvest_pct", "0")),
         long_unrealized_pnl=_decimal(account.get("long_unrealized_pnl", account.get("unrealized_pnl", "0"))),
         short_unrealized_pnl=_decimal(account.get("short_unrealized_pnl", account.get("unrealized_pnl", "0"))))
     for side_name in ("long", "short"):
@@ -143,6 +176,8 @@ def evaluate_restructuring(current: dict[str, Any], *, trigger: str, account: di
             tick_size=_decimal(instrument["tick_size"]),)
     proposed["capital_snapshot"] = snapshot.as_dict()
     proposed["budgets"] = {key: str(value) for key, value in budgets.items()}
+    side_errors = [error for side in proposed.get("sides", {}).values() for error in side.get("validation_errors", [])]
+    proposed["validation"] = {"state": "BLOCKED" if side_errors else "VALID", "errors": side_errors}
     changes = []
     for side in ("long", "short"):
         old_orders = current.get("sides", {}).get(side, {}).get("orders", [])

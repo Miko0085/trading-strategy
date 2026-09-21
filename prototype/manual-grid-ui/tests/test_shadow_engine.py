@@ -7,6 +7,7 @@ from app.shadow.lots import apply_fill, tp_prices, tp_quantities
 from app.shadow.sizing import normalized_weights, planned_margin, quantity_for_budget
 from app.shadow.overrides import apply_field_overrides
 from app.shadow.trailing import trail_pending_grid
+from app.shadow.reinvestment import calculate_effective_side_budget, next_strategy_deposit, realized_reinvest_amount
 
 
 INSTRUMENT = {"tick_size": "0.1", "qty_step": "0.1", "min_order_qty": "0.1", "min_notional_value": "5"}
@@ -156,3 +157,31 @@ def test_planned_tp_templates_are_not_shared_between_grid_orders():
     grid = generate_grid(account=account(), configuration=configuration(), instrument=INSTRUMENT)["sides"]["long"]
     grid["orders"][0]["planned_tp"][0]["move_pct"] = "99"
     assert grid["orders"][1]["planned_tp"][0]["move_pct"] == "10"
+
+
+def test_partial_close_frees_factual_used_capital():
+    current = generate_grid(account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    order = current["sides"]["long"]["orders"][0]
+    order.update({"filled_qty": Decimal("100"), "closed_qty": Decimal("50"), "open_qty": Decimal("50"), "actual_avg_fill": Decimal("100")})
+    result = evaluate_restructuring(current, trigger="TP_PARTIAL_FILL", account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    assert result["after"]["sides"]["long"]["factual_used_capital"] == Decimal("2500")
+
+
+def test_locked_future_over_budget_blocks_instead_of_clamping():
+    current = generate_grid(account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    order = current["sides"]["long"]["orders"][0]
+    order["manual_qty_lock"] = True
+    order["qty"] = Decimal("1000")
+    result = evaluate_restructuring(current, trigger="CAPITAL_STATE_CHANGE", account=account("100"), configuration=configuration(), instrument=INSTRUMENT)
+    assert result["after"]["sides"]["long"]["validation_state"] == "BLOCKED"
+    assert "Ручные future-ордера" in result["after"]["sides"]["long"]["validation_errors"][0]
+    assert result["after"]["validation"]["state"] == "BLOCKED"
+
+
+def test_realized_deposit_is_persistent_but_unrealized_boost_is_temporary_and_capped():
+    assert realized_reinvest_amount(Decimal("100"), Decimal("50")) == Decimal("50")
+    assert realized_reinvest_amount(Decimal("-100"), Decimal("50")) == Decimal("0")
+    assert next_strategy_deposit(Decimal("3000"), Decimal("100"), Decimal("50")) == Decimal("3050")
+    result = calculate_effective_side_budget(capital_base=Decimal("10000"), long_pct=Decimal("30"), short_pct=Decimal("30"), reserve_pct=Decimal("30"), long_unrealized_pnl=Decimal("1000"), short_unrealized_pnl=Decimal("1000"), long_unrealized_reinvest_pct=Decimal("100"), short_unrealized_reinvest_pct=Decimal("100"))
+    assert result["reserve"] == Decimal("3000")
+    assert result["long"] + result["short"] <= Decimal("7000")

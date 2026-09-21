@@ -92,6 +92,18 @@ class RevisionRepository:
             revision_id, created_at = cursor.fetchone()
         return {"id": str(revision_id), "symbol": symbol, "trigger": evaluation["trigger"], "revision_type": evaluation["revision_type"], "status": "VIRTUAL", "created_at": created_at.isoformat(), "payload": evaluation}
 
+    def save_apply_audit(self, symbol: str, payload: dict[str, Any], *, environment: str) -> dict[str, Any]:
+        """Persist a local generated-grid intention; this never talks to Bybit."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM ui_accounts WHERE name=%s AND environment=%s FOR UPDATE", ("Manual Grid", environment))
+            account = cursor.fetchone()
+            if account is None:
+                cursor.execute("INSERT INTO ui_accounts(name,environment) VALUES(%s,%s) RETURNING id", ("Manual Grid", environment))
+                account = cursor.fetchone()
+            entity_id = str(payload.get("event_id") or "generated-grid-apply")
+            cursor.execute("INSERT INTO audit_events(account_id,entity,entity_type,entity_id,side,action,before_payload,after_payload) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)", (account[0], symbol, "grid_order", entity_id, payload.get("side"), "generated_grid_applied", json.dumps(payload.get("before")), json.dumps(payload.get("after"))))
+        return {"symbol": symbol, "entity_id": entity_id, "action": "generated_grid_applied"}
+
     def list_shadow_revisions(self, symbol: str | None = None) -> list[dict[str, Any]]:
         with self._connect() as connection, connection.cursor() as cursor:
             if symbol:

@@ -52,7 +52,16 @@ def normalize_orders(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def normalize_executions(result: dict[str, Any]) -> list[dict[str, Any]]:
-    return [{"execution_id": item.get("execId"), "order_id": item.get("orderId"), "symbol": item.get("symbol"), "side": item.get("side"), "price": item.get("execPrice"), "qty": item.get("execQty"), "fee": item.get("execFee"), "timestamp": item.get("execTime"), "realized_pnl": item.get("execPnl"), "position_idx": item.get("positionIdx")} for item in result.get("list", [])]
+    normalized = []
+    seen: set[str] = set()
+    for item in result.get("list", []):
+        execution_id = item.get("execId")
+        if execution_id and execution_id in seen:
+            continue
+        if execution_id:
+            seen.add(execution_id)
+        normalized.append({"execution_id": execution_id, "order_id": item.get("orderId"), "symbol": item.get("symbol"), "side": item.get("side"), "price": item.get("execPrice"), "qty": item.get("execQty"), "fee": item.get("execFee"), "timestamp": item.get("execTime"), "realized_pnl": item.get("execPnl"), "position_idx": item.get("positionIdx")})
+    return normalized
 
 
 def normalize_account(wallet: dict[str, Any], positions: dict[str, Any], orders: dict[str, Any], ticker: dict[str, Any], instrument: dict[str, Any], source: str, executions: dict[str, Any] | None = None) -> dict[str, Any]:

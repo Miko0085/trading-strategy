@@ -19,7 +19,7 @@ import { MobileBottomBar } from "./components/MobileBottomBar";
 import { MobileHeader } from "./components/MobileHeader";
 import { MobileSideSwitch } from "./components/MobileSideSwitch";
 import { StrategySides } from "./components/StrategySides";
-import { GeneratedGridPanel } from "./components/GeneratedGridPanel";
+import { GeneratedGridPanel as GeneratedGridPanelView } from "./components/GeneratedGridPanel";
 import { GeneratedSideConfig } from "./shadowTypes";
 import { emptyDraft, loadDraft, loadWorkspace, removeDraft, saveDraft, setSelectedSymbol, storageDiagnostic, StoredDraft, StoredWorkspace } from "./workspaceStorage";
 import "./styles.css";
@@ -69,6 +69,7 @@ export function App() {
     (side === "long" ? setLong : setShort)(orders);
     (side === "long" ? setActiveLong : setActiveShort)(Math.min(Math.max(1, active), orders.length));
     setRevisions((items) => [{ time: new Date().toISOString(), action: "generated_grid_applied", side, entityType: "grid_order", entityId: `generated-${side}-${Date.now()}`, before: current, after: orders, comment: "GENERATED_ALGORITHM" }, ...items]);
+    void fetchJson("/api/audit/generated-grid", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: account.symbol, side, source: "GENERATED_ALGORITHM", event_id: `generated-${side}-${Date.now()}`, before: { orders: current }, after: { orders, active } }) }).catch(() => undefined);
     setNotice(`${side === "long" ? "Long" : "Short"} Grid заменена generated configuration`);
   };
   const applyGeneratedBoth = (nextLong: GridOrder[], nextLongActive: number, nextShort: GridOrder[], nextShortActive: number) => {
@@ -76,14 +77,10 @@ export function App() {
     setLong(nextLong); setShort(nextShort);
     setActiveLong(Math.min(Math.max(1, nextLongActive), nextLong.length)); setActiveShort(Math.min(Math.max(1, nextShortActive), nextShort.length));
     setRevisions((items) => [{ time: new Date().toISOString(), action: "generated_grid_applied", side: "long+short", entityType: "grid_order", entityId: `generated-both-${Date.now()}`, before: { long, short }, after: { long: nextLong, short: nextShort }, comment: "GENERATED_ALGORITHM" }, ...items]);
+    void fetchJson("/api/audit/generated-grid", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: account.symbol, side: "long+short", source: "GENERATED_ALGORITHM", event_id: `generated-both-${Date.now()}`, before: { long, short, activeLong, activeShort }, after: { long: nextLong, short: nextShort, activeLong: nextLongActive, activeShort: nextShortActive } }) }).catch(() => undefined);
     setNotice("Long Grid и Short Grid заменены generated configuration");
   };
-  useEffect(() => {
-    const applyOne = (event: Event) => { const detail = (event as CustomEvent<{ side: Side; orders: GridOrder[]; active: number }>).detail; applyGenerated(detail.side, detail.orders, detail.active); };
-    const applyBoth = (event: Event) => { const detail = (event as CustomEvent<{ long: GridOrder[]; longActive: number; short: GridOrder[]; shortActive: number }>).detail; applyGeneratedBoth(detail.long, detail.longActive, detail.short, detail.shortActive); };
-    window.addEventListener("manual-grid-apply", applyOne); window.addEventListener("manual-grid-apply-both", applyBoth);
-    return () => { window.removeEventListener("manual-grid-apply", applyOne); window.removeEventListener("manual-grid-apply-both", applyBoth); };
-  });
+  const GeneratedGridPanel = (_props: Record<string, unknown>) => <GeneratedGridPanelView account={account} allocation={allocation} long={generatedLong} short={generatedShort} currentLong={long} currentShort={short} currentActiveLong={activeLong} currentActiveShort={activeShort} onLongChange={setGeneratedLong} onShortChange={setGeneratedShort} onApply={applyGenerated} onApplyBoth={applyGeneratedBoth}/>;
   const draftSnapshot = (updatedAt = new Date().toISOString()): StoredDraft => ({ allocation, long, short, activeLong, activeShort, enabledLong, enabledShort, generatedLong, generatedShort, planningLeverage, mobileSide, page, updatedAt });
   const saveCurrentDraft = (symbol = account.symbol) => { const updatedAt = new Date().toISOString(); const result = saveDraft(symbol, draftSnapshot(updatedAt)); if (result.ok) { setLocalSavedAt(updatedAt); setLocalSaveFailed(false); } else { setLocalSavedAt(null); setLocalSaveFailed(true); setNotice("Не удалось сохранить локальный черновик"); } return result; };
   const restoreDraft = (stored: StoredDraft | null) => { const next = stored ?? emptyDraft(); setAllocation(next.allocation); setLong(next.long); setShort(next.short); setActiveLong(next.activeLong); setActiveShort(next.activeShort); setEnabledLong(next.enabledLong); setEnabledShort(next.enabledShort); setGeneratedLong(next.generatedLong); setGeneratedShort(next.generatedShort); setPlanningLeverage(next.planningLeverage); setMobileSide(next.mobileSide); setPage(next.page ?? "constructor"); setLocalSavedAt(stored ? next.updatedAt : null); };

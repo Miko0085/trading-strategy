@@ -11,7 +11,8 @@ function numberOrNull(value: unknown): number | null {
 
 function offsetFromEntry(previous: number | null, entry: number | null, side: Side): number | null {
   if (previous == null || entry == null || previous === 0) return null;
-  return Math.abs((entry - previous) / previous * 100);
+  const direction = side === "long" ? previous - entry : entry - previous;
+  return direction > 0 ? direction / previous * 100 : null;
 }
 
 export function generatedOrdersToGrid(side: Side, orders: GeneratedOrder[], markPrice: number | null): GridOrder[] {

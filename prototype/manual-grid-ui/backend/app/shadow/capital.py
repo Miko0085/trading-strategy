@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 
+from .reinvestment import calculate_effective_side_budget
+
 
 @dataclass(frozen=True)
 class CapitalSnapshot:
@@ -38,6 +40,10 @@ def side_budgets(
     short_to_long_reinvestment_pct: Decimal = Decimal("0"),
     long_unrealized_pnl: Decimal = Decimal("0"),
     short_unrealized_pnl: Decimal = Decimal("0"),
+    long_realized_reinvest_pct: Decimal = Decimal("0"),
+    short_realized_reinvest_pct: Decimal = Decimal("0"),
+    previous_long_strategy_deposit: Decimal | None = None,
+    previous_short_strategy_deposit: Decimal | None = None,
 ) -> dict[str, Decimal]:
     """Return the one canonical capital allocation policy.
 
@@ -48,20 +54,17 @@ def side_budgets(
     total_pct = long_pct + short_pct + reserve_pct
     if snapshot.capital_base is None or total_pct > 100 or min(long_pct, short_pct, reserve_pct) < 0:
         raise ValueError("capital base and allocation percentages are required")
-    base_long = snapshot.capital_base * long_pct / 100
-    base_short = snapshot.capital_base * short_pct / 100
-    reserve = snapshot.capital_base * reserve_pct / 100
-    requested_long_extra = max(Decimal("0"), short_unrealized_pnl) * max(Decimal("0"), short_to_long_reinvestment_pct) / 100
-    requested_short_extra = max(Decimal("0"), long_unrealized_pnl) * max(Decimal("0"), long_to_short_reinvestment_pct) / 100
-    extra_room = max(Decimal("0"), snapshot.capital_base - reserve - base_long - base_short)
-    requested_extra = requested_long_extra + requested_short_extra
-    scale = min(Decimal("1"), extra_room / requested_extra) if requested_extra else Decimal("1")
+    effective = calculate_effective_side_budget(
+        capital_base=snapshot.capital_base, long_pct=long_pct, short_pct=short_pct, reserve_pct=reserve_pct,
+        previous_long_deposit=previous_long_strategy_deposit, previous_short_deposit=previous_short_strategy_deposit,
+        long_realized_reinvest_pct=long_realized_reinvest_pct, short_realized_reinvest_pct=short_realized_reinvest_pct,
+        long_unrealized_pnl=long_unrealized_pnl, short_unrealized_pnl=short_unrealized_pnl,
+        long_unrealized_reinvest_pct=short_to_long_reinvestment_pct, short_unrealized_reinvest_pct=long_to_short_reinvestment_pct,
+    )
     result = {
-        "long": base_long + requested_long_extra * scale,
-        "short": base_short + requested_short_extra * scale,
-        "reserve": reserve,
+        "long": effective["long"], "short": effective["short"], "reserve": effective["reserve"],
     }
-    if requested_long_extra or requested_short_extra:
-        result["long_extra"] = requested_long_extra * scale
-        result["short_extra"] = requested_short_extra * scale
+    if effective["long_unrealized_requested"] or effective["short_unrealized_requested"]:
+        result["long_extra"] = effective["long_unrealized_boost"]
+        result["short_extra"] = effective["short_unrealized_boost"]
     return result

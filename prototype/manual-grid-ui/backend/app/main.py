@@ -268,6 +268,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as exc:  # noqa: BLE001 -- API boundary returns safe storage error
             raise HTTPException(503, "PostgreSQL недоступен или миграция не выполнена") from exc
 
+    @app.post("/api/audit/generated-grid")
+    async def audit_generated_grid(payload: dict[str, Any]) -> dict[str, Any]:
+        symbol = str(payload.get("symbol", "")).upper()
+        if not symbol or payload.get("source") != "GENERATED_ALGORITHM":
+            raise HTTPException(422, "generated grid audit payload is invalid")
+        try:
+            return app.state.repository.save_apply_audit(symbol, payload, environment=settings.environment)
+        except Exception as exc:  # noqa: BLE001 -- API boundary returns safe storage error
+            raise HTTPException(503, "PostgreSQL недоступен или миграция не выполнена") from exc
+
     return app
 
 

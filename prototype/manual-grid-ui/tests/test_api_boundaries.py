@@ -8,6 +8,9 @@ from app.config import Settings
 import app.config as config_module
 from app.main import create_app
 from app.account_service import AccountStateService
+from app.account_state import normalize_executions
+from app.shadow.lots import apply_execution_to_shadow_order
+from app.shadow.triggers import classify_restructuring_trigger
 
 
 def test_calculate_endpoint_returns_decimal_normalized_result():
@@ -98,6 +101,18 @@ def test_executions_are_read_only_and_normalized(monkeypatch):
     result = asyncio.run(client.executions("linear", "BTCUSDT"))
     assert result["list"][0]["execId"] == "e1"
     assert not hasattr(client, "place_order")
+
+
+def test_execution_dedupe_and_idempotent_shadow_apply():
+    result = normalize_executions({"list": [{"execId": "e1", "execQty": "2", "execPrice": "100"}, {"execId": "e1", "execQty": "2", "execPrice": "100"}]})
+    assert len(result) == 1
+    order = {"qty": 5, "configured_qty": 5, "filled_qty": 0, "closed_qty": 0, "executions": [], "strategy_lots": []}
+    apply_execution_to_shadow_order(order, result[0])
+    apply_execution_to_shadow_order(order, result[0])
+    assert order["filled_qty"] == 2
+    assert len(order["executions"]) == 1
+    assert classify_restructuring_trigger(event_type="entry", filled_qty=2, target_qty=5) == "ENTRY_PARTIAL_FILL"
+    assert classify_restructuring_trigger(event_type="entry", filled_qty=5, target_qty=5) == "ENTRY_FULL_FILL"
 
 
 def test_instrument_list_request_is_public_and_does_not_require_symbol(monkeypatch):
