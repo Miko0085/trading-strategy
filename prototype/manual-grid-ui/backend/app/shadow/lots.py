@@ -21,7 +21,41 @@ def apply_execution_to_shadow_order(order: dict[str, object], execution: dict[st
     order["remaining_entry_qty"] = max(Decimal("0"), order["configured_qty"] - filled)
     executions.append({"execution_id": execution_id, **execution})
     lots = order.setdefault("strategy_lots", [])
-    lots.append({"execution_id": execution_id, "qty": qty, "price": price, "attribution": "FACTUAL"})
+    lot = next((item for item in lots if isinstance(item, dict) and item.get("attribution") == "FACTUAL"), None)
+    if lot is None:
+        lot = {"lot_id": f"factual-level-{order.get('level', 'unknown')}", "attribution": "FACTUAL", "execution_ids": []}
+        lots.append(lot)
+    execution_ids = lot.setdefault("execution_ids", [])
+    if execution_id and execution_id not in execution_ids:
+        execution_ids.append(execution_id)
+    lot.update({"filled_qty": order["filled_qty"], "open_qty": order["open_qty"], "closed_qty": order.get("closed_qty", Decimal("0")), "actual_avg_fill": order["actual_avg_fill"]})
+    return order
+
+
+def apply_close_to_shadow_order(order: dict[str, object], execution: dict[str, object]) -> dict[str, object]:
+    """Apply one proven factual close without changing entry facts."""
+    execution_id = execution.get("execution_id") or execution.get("execId")
+    executions = order.setdefault("executions", [])
+    if execution_id and any(item.get("execution_id") == execution_id for item in executions if isinstance(item, dict)):
+        return order
+    qty = Decimal(str(execution.get("qty") or execution.get("execQty") or "0"))
+    if qty <= 0:
+        raise ValueError("execution qty must be positive")
+    filled = Decimal(str(order.get("filled_qty", "0")))
+    closed = Decimal(str(order.get("closed_qty", "0")))
+    open_qty = filled - closed
+    if qty > open_qty:
+        raise ValueError("close execution exceeds factual open quantity")
+    order["closed_qty"] = closed + qty
+    order["open_qty"] = open_qty - qty
+    executions.append({"execution_id": execution_id, **execution})
+    lots = order.setdefault("strategy_lots", [])
+    lot = next((item for item in lots if isinstance(item, dict) and item.get("attribution") == "FACTUAL"), None)
+    if lot is not None:
+        execution_ids = lot.setdefault("execution_ids", [])
+        if execution_id and execution_id not in execution_ids:
+            execution_ids.append(execution_id)
+        lot.update({"filled_qty": filled, "closed_qty": order["closed_qty"], "open_qty": order["open_qty"], "actual_avg_fill": order.get("actual_avg_fill"), "state": "CLOSED" if order["open_qty"] == 0 else "OPEN"})
     return order
 
 

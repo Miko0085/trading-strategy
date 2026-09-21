@@ -197,7 +197,7 @@ def test_realized_close_updates_persistent_deposit_and_deduplicates_execution():
     current = generate_grid(account=account(), configuration=configuration(), instrument=INSTRUMENT)
     config = configuration()
     config["long"]["realized_reinvest_pct"] = "50"
-    execution = {"execution_id": "close-1", "side": "Buy", "trigger": "TP_PARTIAL_FILL", "realized_pnl": "100", "fee": "0"}
+    execution = {"execution_id": "close-1", "side": "Sell", "position_idx": 1, "trigger": "TP_PARTIAL_FILL", "realized_pnl": "100", "fee": "0"}
     first = apply_realized_execution(current, execution=execution, configuration=config)
     assert first["strategy_state"]["long_strategy_deposit"] == "350"
     replay = apply_realized_execution(first, execution=execution, configuration=config)
@@ -209,9 +209,9 @@ def test_realized_reinvest_is_side_specific_and_negative_profit_does_not_change_
     current = generate_grid(account=account(), configuration=configuration(), instrument=INSTRUMENT)
     config = configuration()
     config["long"]["realized_reinvest_pct"] = "50"
-    negative = apply_realized_execution(current, execution={"execution_id": "close-2", "side": "Buy", "trigger": "MANUAL_FULL_CLOSE", "realized_pnl": "-100", "fee": "0"}, configuration=config)
+    negative = apply_realized_execution(current, execution={"execution_id": "close-2", "side": "Sell", "position_idx": 1, "trigger": "MANUAL_FULL_CLOSE", "realized_pnl": "-100", "fee": "0"}, configuration=config)
     assert negative["strategy_state"]["long_strategy_deposit"] == "300"
-    short = apply_realized_execution(negative, execution={"execution_id": "close-3", "side": "Sell", "trigger": "TP_FULL_FILL", "realized_pnl": "100", "fee": "0"}, configuration=config)
+    short = apply_realized_execution(negative, execution={"execution_id": "close-3", "side": "Buy", "position_idx": 2, "trigger": "TP_FULL_FILL", "realized_pnl": "100", "fee": "0"}, configuration=config)
     assert short["strategy_state"]["short_strategy_deposit"] == "200"
     assert short["strategy_state"]["long_strategy_deposit"] == "300"
 
@@ -221,7 +221,7 @@ def test_restructuring_starts_from_persisted_strategy_deposit():
     config = configuration()
     config["allocation"]["reserve_pct"] = "20"
     config["long"]["realized_reinvest_pct"] = "50"
-    current = apply_realized_execution(current, execution={"execution_id": "close-4", "side": "Buy", "trigger": "TP_FULL_FILL", "realized_pnl": "100", "fee": "0"}, configuration=config)
+    current = apply_realized_execution(current, execution={"execution_id": "close-4", "side": "Sell", "position_idx": 1, "trigger": "TP_FULL_FILL", "realized_pnl": "100", "fee": "0"}, configuration=config)
     revised = evaluate_restructuring(current, trigger="CAPITAL_STATE_CHANGE", account=account(), configuration=config, instrument=INSTRUMENT)["after"]
     assert revised["strategy_state"]["long_strategy_deposit"] == "350"
     assert revised["shadow_summary"]["long"]["strategy_deposit"] == "350"

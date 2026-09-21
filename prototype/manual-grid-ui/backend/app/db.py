@@ -88,7 +88,7 @@ class RevisionRepository:
 
     def save_shadow_revision(self, symbol: str, evaluation: dict[str, Any]) -> dict[str, Any]:
         with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute("INSERT INTO shadow_grid_revisions(symbol,trigger,revision_type,status,payload,capital_snapshot) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,created_at", (symbol, evaluation["trigger"], evaluation["revision_type"], "VIRTUAL", json.dumps(evaluation), json.dumps(evaluation.get("after", {}).get("capital_snapshot", {}))))
+            cursor.execute("INSERT INTO shadow_grid_revisions(symbol,trigger,revision_type,status,payload,capital_snapshot) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,created_at", (symbol, evaluation["trigger"], evaluation["revision_type"], "VIRTUAL", json.dumps(evaluation, default=str), json.dumps(evaluation.get("after", {}).get("capital_snapshot", {}), default=str)))
             revision_id, created_at = cursor.fetchone()
         return {"id": str(revision_id), "symbol": symbol, "trigger": evaluation["trigger"], "revision_type": evaluation["revision_type"], "status": "VIRTUAL", "created_at": created_at.isoformat(), "payload": evaluation}
 

@@ -232,10 +232,15 @@ def evaluate_restructuring(current: dict[str, Any], *, trigger: str, account: di
 
 
 def _execution_side(execution: dict[str, Any]) -> str | None:
-    raw_side = str(execution.get("side", "")).lower()
-    if raw_side in {"buy", "long"} or str(execution.get("position_idx", execution.get("positionIdx", ""))) == "1":
+    position_idx = str(execution.get("position_idx", execution.get("positionIdx", "")))
+    if position_idx == "1":
         return "long"
-    if raw_side in {"sell", "short"} or str(execution.get("position_idx", execution.get("positionIdx", ""))) == "2":
+    if position_idx == "2":
+        return "short"
+    raw_side = str(execution.get("side", "")).lower()
+    if raw_side in {"long"}:
+        return "long"
+    if raw_side in {"short"}:
         return "short"
     return None
 

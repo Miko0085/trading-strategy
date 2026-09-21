@@ -48,7 +48,7 @@ def normalize_position_mode(result: dict[str, Any]) -> str:
 
 
 def normalize_orders(result: dict[str, Any]) -> list[dict[str, Any]]:
-    return [{"order_id": item.get("orderId"), "symbol": item.get("symbol"), "side": item.get("side"), "status": item.get("orderStatus"), "price": item.get("price"), "qty": item.get("qty"), "leaves_qty": item.get("leavesQty"), "position_idx": item.get("positionIdx")} for item in result.get("list", [])]
+    return [{"order_id": item.get("orderId"), "order_link_id": item.get("orderLinkId"), "symbol": item.get("symbol"), "side": item.get("side"), "status": item.get("orderStatus"), "price": item.get("price"), "qty": item.get("qty"), "leaves_qty": item.get("leavesQty"), "position_idx": item.get("positionIdx"), "reduce_only": item.get("reduceOnly"), "close_on_trigger": item.get("closeOnTrigger")} for item in result.get("list", [])]
 
 
 def normalize_executions(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -60,7 +60,7 @@ def normalize_executions(result: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if execution_id:
             seen.add(execution_id)
-        normalized.append({"execution_id": execution_id, "order_id": item.get("orderId"), "symbol": item.get("symbol"), "side": item.get("side"), "price": item.get("execPrice"), "qty": item.get("execQty"), "fee": item.get("execFee"), "timestamp": item.get("execTime"), "realized_pnl": item.get("execPnl"), "position_idx": item.get("positionIdx")})
+        normalized.append({"execution_id": execution_id, "order_id": item.get("orderId"), "order_link_id": item.get("orderLinkId"), "symbol": item.get("symbol"), "side": item.get("side"), "price": item.get("execPrice"), "qty": item.get("execQty"), "fee": item.get("execFee"), "timestamp": item.get("execTime"), "realized_pnl": item.get("execPnl"), "position_idx": item.get("positionIdx"), "exec_type": item.get("execType"), "closed_size": item.get("closedSize"), "reduce_only": item.get("reduceOnly"), "close_on_trigger": item.get("closeOnTrigger")})
     return normalized
 
 
