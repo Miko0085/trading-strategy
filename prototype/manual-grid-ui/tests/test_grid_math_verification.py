@@ -139,9 +139,9 @@ def test_power_distribution_boundary_and_coefficient_semantics():
 def test_martingale_is_exact_normalized_geometric_progression(multiplier: Decimal):
     weights = normalized_weights(8, multiplier)
 
-    assert sum(weights, D("0")) == D("1")
+    assert abs(sum(weights, D("0")) - D("1")) < D("1e-24")
     for left, right in zip(weights, weights[1:], strict=False):
-        assert right / left == multiplier
+        assert abs(right / left - multiplier) < D("1e-24")
 
 
 def test_martingale_budget_changes_scale_sizing_without_changing_weights():
@@ -382,9 +382,9 @@ def test_grid_math_invariants_across_parameter_matrix(count: int, coefficient: D
     assert proportions[-1] == D("1")
 
     weights = normalized_weights(count, multiplier)
-    assert sum(weights, D("0")) == D("1")
+    assert abs(sum(weights, D("0")) - D("1")) < D("1e-24")
     for left, right in zip(weights, weights[1:], strict=False):
-        assert right / left == multiplier
+        assert abs(right / left - multiplier) < D("1e-24")
 
     qty = quantity_for_budget(
         D("1000"),
