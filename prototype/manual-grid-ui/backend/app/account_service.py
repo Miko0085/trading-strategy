@@ -25,6 +25,9 @@ class AccountStateService:
             wallet = await self.client.account_state() if require_private else {}
             positions = await self.client.positions("linear", symbol) if require_private else {}
             orders: dict[str, Any] = {}
+            executions: dict[str, Any] = {}
+            executions_available = not require_private
+            executions_error = None
             orders_available = not require_private
             orders_error = None
             if require_private:
@@ -35,9 +38,19 @@ class AccountStateService:
                     orders_available = True
                 except ReadOnlyBybitError as exc:
                     orders_error = "Открытые ордера Bybit недоступны"
-            state = normalize_account(wallet, positions, orders, ticker, instrument, "bybit_read_only" if require_private else "public_only")
+                try:
+                    executions_method = getattr(self.client, "executions")
+                    executions = await executions_method("linear", symbol)
+                    if not isinstance(executions.get("list"), list):
+                        raise ReadOnlyBybitError("Bybit executions result list is missing")
+                    executions_available = True
+                except (AttributeError, ReadOnlyBybitError):
+                    executions_error = "Исполнения Bybit недоступны"
+            state = normalize_account(wallet, positions, orders, ticker, instrument, "bybit_read_only" if require_private else "public_only", executions)
             state["orders_available"] = orders_available
             state["orders_error"] = orders_error
+            state["executions_available"] = executions_available
+            state["executions_error"] = executions_error
             state["updated_at"] = datetime.now(UTC).isoformat()
             state["stale"] = False
             state["error"] = None

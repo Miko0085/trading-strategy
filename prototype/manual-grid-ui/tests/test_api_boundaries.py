@@ -87,6 +87,19 @@ def test_api_has_no_trading_write_routes_or_client_methods():
     assert not any(name in dir(ReadOnlyBybitClient) for name in ("place_order", "amend_order", "cancel_order", "close_position", "set_leverage"))
 
 
+def test_executions_are_read_only_and_normalized(monkeypatch):
+    client = ReadOnlyBybitClient("key", "secret")
+
+    async def fake_private_get(path, params=None):
+        assert path == "/v5/execution/list"
+        return {"result": {"list": [{"execId": "e1", "orderId": "o1", "execPrice": "100", "execQty": "2"}]}}
+
+    monkeypatch.setattr(client, "private_get", fake_private_get)
+    result = asyncio.run(client.executions("linear", "BTCUSDT"))
+    assert result["list"][0]["execId"] == "e1"
+    assert not hasattr(client, "place_order")
+
+
 def test_instrument_list_request_is_public_and_does_not_require_symbol(monkeypatch):
     app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="", bybit_api_secret=""))
 

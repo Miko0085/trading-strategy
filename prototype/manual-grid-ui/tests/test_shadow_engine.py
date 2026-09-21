@@ -83,3 +83,76 @@ def test_manual_locked_qty_is_preserved_and_budget_violation_blocks():
     assert result["orders"][0]["qty"] == Decimal("10")
     assert result["orders"][0]["manual_qty_lock"] is True
     assert result["status"] == "BLOCKED"
+
+
+def test_allocation_can_leave_capital_unallocated_and_extras_are_directional_and_guarded():
+    snapshot = capital_snapshot(account("1000"))
+    budgets = side_budgets(snapshot, Decimal("20"), Decimal("20"), Decimal("40"), long_to_short_reinvestment_pct=Decimal("10"), short_to_long_reinvestment_pct=Decimal("20"), long_unrealized_pnl=Decimal("500"), short_unrealized_pnl=Decimal("100"))
+    assert budgets["long"] + budgets["short"] + budgets["reserve"] <= Decimal("1000")
+    assert budgets["reserve"] == Decimal("400")
+    assert budgets["long_extra"] == Decimal("20")  # Short uPnL * short_to_long
+    assert budgets["short_extra"] == Decimal("50")  # Long uPnL * long_to_short
+
+
+def test_non_trailing_restructure_preserves_prices_and_factual_lot_and_deducts_used_capital():
+    current = generate_grid(account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    order = current["sides"]["long"]["orders"][0]
+    apply_fill(order, Decimal("1"), Decimal("95"))
+    order["closed_qty"] = Decimal("0.25")
+    order["strategy_lots"] = [{"lot_id": "lot-1", "filled_qty": "1"}]
+    order["executions"] = [{"execution_id": "exec-1"}]
+    before_prices = [item["entry_price"] for item in current["sides"]["long"]["orders"]]
+    result = evaluate_restructuring(current, trigger="CAPITAL_STATE_CHANGE", account=account("700"), configuration=configuration(), instrument=INSTRUMENT)
+    after = result["after"]["sides"]["long"]
+    assert [item["entry_price"] for item in after["orders"]] == before_prices
+    assert after["orders"][0]["filled_qty"] == Decimal("1")
+    assert after["orders"][0]["closed_qty"] == Decimal("0.25")
+    assert after["orders"][0]["actual_avg_fill"] == Decimal("95")
+    assert after["orders"][0]["strategy_lots"] == [{"lot_id": "lot-1", "filled_qty": "1"}]
+    assert after["orders"][0]["executions"] == [{"execution_id": "exec-1"}]
+    assert after["factual_used_capital"] == Decimal("47.5")
+
+
+def test_partial_fill_survives_a_second_restructuring():
+    current = generate_grid(account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    order = current["sides"]["long"]["orders"][0]
+    apply_fill(order, Decimal("0.4"), Decimal("95"))
+    first = evaluate_restructuring(current, trigger="ENTRY_PARTIAL_FILL", account=account("900"), configuration=configuration(), instrument=INSTRUMENT)["after"]
+    second = evaluate_restructuring(first, trigger="CAPITAL_STATE_CHANGE", account=account("800"), configuration=configuration(), instrument=INSTRUMENT)["after"]
+    preserved = second["sides"]["long"]["orders"][0]
+    assert preserved["filled_qty"] == Decimal("0.4")
+    assert preserved["open_qty"] == Decimal("0.4")
+    assert preserved["actual_avg_fill"] == Decimal("95")
+
+
+def test_locked_future_capital_is_reserved_before_auto_normalization():
+    current = generate_grid(account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    orders = current["sides"]["long"]["orders"]
+    orders[0]["manual_qty_lock"] = True
+    orders[0]["qty"] = Decimal("2")
+    result = evaluate_restructuring(current, trigger="CAPITAL_STATE_CHANGE", account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    side = result["after"]["sides"]["long"]
+    assert side["locked_future_manual_capital"] == orders[0]["entry_price"]
+    assert side["budget_for_auto_levels"] == side["budget"] - side["locked_future_manual_capital"]
+    auto_margin = sum((item["entry_price"] * item["qty"] / Decimal("2") for item in side["orders"][1:]), Decimal("0"))
+    assert auto_margin <= side["budget_for_auto_levels"]
+
+
+def test_trailing_only_moves_pending_entries_and_keeps_filled_entry_fixed():
+    current = generate_grid(account=account("1000"), configuration=configuration(), instrument=INSTRUMENT)
+    filled = current["sides"]["long"]["orders"][0]
+    apply_fill(filled, Decimal("1"), Decimal("95"))
+    old_filled_price = filled["entry_price"]
+    old_pending_prices = [item["entry_price"] for item in current["sides"]["long"]["orders"][1:]]
+    trailing_configuration = configuration()
+    trailing_configuration["long"]["anchor_price"] = "105"
+    result = evaluate_restructuring(current, trigger="TRAILING_TRIGGER", account=account("1000"), configuration=trailing_configuration, instrument=INSTRUMENT)
+    after_orders = result["after"]["sides"]["long"]["orders"]
+    assert after_orders[0]["entry_price"] == old_filled_price
+    assert [item["entry_price"] for item in after_orders[1:]] != old_pending_prices
+
+
+def test_planned_tp_templates_are_not_shared_between_grid_orders():
+    grid = generate_grid(account=account(), configuration=configuration(), instrument=INSTRUMENT)["sides"]["long"]
+    grid["orders"][0]["planned_tp"][0]["move_pct"] = "99"
+    assert grid["orders"][1]["planned_tp"][0]["move_pct"] == "10"

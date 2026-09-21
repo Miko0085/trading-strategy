@@ -16,9 +16,9 @@ class AllocationDTO(ApiModel):
     reserve_pct: Decimal = Field(ge=0, le=100, validation_alias=AliasChoices("reserve_pct", "reservePct"))
 
     @model_validator(mode="after")
-    def total_is_one_hundred(self) -> "AllocationDTO":
-        if self.long_pct + self.short_pct + self.reserve_pct != 100:
-            raise ValueError("Распределение должно составлять 100%")
+    def total_is_at_most_one_hundred(self) -> "AllocationDTO":
+        if self.long_pct + self.short_pct + self.reserve_pct > 100:
+            raise ValueError("Распределение не может превышать 100%")
         return self
 
 

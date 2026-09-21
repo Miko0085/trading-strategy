@@ -78,6 +78,12 @@ class ReadOnlyBybitClient:
     async def open_orders(self, category: str, symbol: str) -> dict[str, Any]:
         return (await self.private_get("/v5/order/realtime", {"category": category, "symbol": symbol})).get("result", {})
 
+    async def executions(self, category: str, symbol: str, limit: str = "100", cursor: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {"category": category, "symbol": symbol, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return (await self.private_get("/v5/execution/list", params)).get("result", {})
+
     async def instrument(self, category: str, symbol: str | None = None, cursor: str | None = None) -> dict[str, Any]:
         params: dict[str, Any] = {"category": category}
         if symbol:
