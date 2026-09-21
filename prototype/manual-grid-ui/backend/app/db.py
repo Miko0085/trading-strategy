@@ -86,6 +86,20 @@ class RevisionRepository:
             cursor.execute(query, params)
             return [{"id": str(row[0]), "symbol": row[1], "comment": row[2], "payload": row[3], "validation_state": row[4], "created_at": row[5].isoformat()} for row in cursor.fetchall()]
 
+    def save_shadow_revision(self, symbol: str, evaluation: dict[str, Any]) -> dict[str, Any]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("INSERT INTO shadow_grid_revisions(symbol,trigger,revision_type,status,payload,capital_snapshot) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,created_at", (symbol, evaluation["trigger"], evaluation["revision_type"], "VIRTUAL", json.dumps(evaluation), json.dumps(evaluation.get("after", {}).get("capital_snapshot", {}))))
+            revision_id, created_at = cursor.fetchone()
+        return {"id": str(revision_id), "symbol": symbol, "trigger": evaluation["trigger"], "revision_type": evaluation["revision_type"], "status": "VIRTUAL", "created_at": created_at.isoformat(), "payload": evaluation}
+
+    def list_shadow_revisions(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            if symbol:
+                cursor.execute("SELECT id,symbol,trigger,revision_type,status,payload,created_at FROM shadow_grid_revisions WHERE symbol=%s ORDER BY created_at DESC", (symbol,))
+            else:
+                cursor.execute("SELECT id,symbol,trigger,revision_type,status,payload,created_at FROM shadow_grid_revisions ORDER BY created_at DESC")
+            return [{"id": str(row[0]), "symbol": row[1], "trigger": row[2], "revision_type": row[3], "status": row[4], "payload": row[5], "created_at": row[6].isoformat()} for row in cursor.fetchall()]
+
     def audit(self, filter_name: str = "all") -> list[dict[str, Any]]:
         with self._connect() as connection, connection.cursor() as cursor:
             query = "SELECT id,created_at,entity_type,entity_id,side,action,before_payload,after_payload FROM audit_events"

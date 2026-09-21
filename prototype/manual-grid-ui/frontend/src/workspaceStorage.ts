@@ -1,4 +1,5 @@
 import { Allocation, GridOrder, Side, TP } from "./domain";
+import { GeneratedSideConfig, defaultGeneratedSide } from "./shadowTypes";
 
 export const WORKSPACE_STORAGE_KEY = "manual-grid-workspace:v1";
 export const WORKSPACE_VERSION = 1 as const;
@@ -12,6 +13,8 @@ export type StoredDraft = {
   activeShort: number;
   enabledLong: boolean;
   enabledShort: boolean;
+  generatedLong: GeneratedSideConfig;
+  generatedShort: GeneratedSideConfig;
   planningLeverage: number | null;
   mobileSide: Side;
   page?: "constructor" | "state";
@@ -34,7 +37,7 @@ export type StorageDiagnostic = {
 };
 
 export function emptyDraft(): StoredDraft {
-  return { allocation: { longPct: null, shortPct: null, reservePct: null }, long: [], short: [], activeLong: 0, activeShort: 0, enabledLong: true, enabledShort: true, planningLeverage: null, mobileSide: "long", page: "constructor", updatedAt: new Date(0).toISOString() };
+  return { allocation: { longPct: null, shortPct: null, reservePct: null }, long: [], short: [], activeLong: 0, activeShort: 0, enabledLong: true, enabledShort: true, generatedLong: defaultGeneratedSide(true, 30), generatedShort: defaultGeneratedSide(false, 20), planningLeverage: null, mobileSide: "long", page: "constructor", updatedAt: new Date(0).toISOString() };
 }
 
 export function emptyWorkspace(): StoredWorkspace {
@@ -65,7 +68,10 @@ function draft(value: unknown): StoredDraft | null {
   if (!item || !itemAllocation || !Array.isArray(item.long) || !Array.isArray(item.short) || typeof item.activeLong !== "number" || typeof item.activeShort !== "number" || !Number.isFinite(item.activeLong) || !Number.isFinite(item.activeShort) || (item.enabledLong !== undefined && typeof item.enabledLong !== "boolean") || (item.enabledShort !== undefined && typeof item.enabledShort !== "boolean") || !(item.planningLeverage === null || (typeof item.planningLeverage === "number" && Number.isFinite(item.planningLeverage))) || (item.mobileSide !== "long" && item.mobileSide !== "short") || (item.page !== undefined && item.page !== "constructor" && item.page !== "state") || typeof item.updatedAt !== "string") return null;
   const long = item.long.map(order); const short = item.short.map(order);
   if (long.some((value) => value === null) || short.some((value) => value === null)) return null;
-  return { allocation: itemAllocation, long: long as GridOrder[], short: short as GridOrder[], activeLong: item.activeLong, activeShort: item.activeShort, enabledLong: item.enabledLong ?? true, enabledShort: item.enabledShort ?? true, planningLeverage: item.planningLeverage, mobileSide: item.mobileSide, page: item.page, updatedAt: item.updatedAt };
+  const generatedLong = record(item.generatedLong);
+  const generatedShort = record(item.generatedShort);
+  const generated = (value: Record<string, unknown> | null, fallback: GeneratedSideConfig): GeneratedSideConfig => value && typeof value.orderCount === "number" && typeof value.gridDepthPct === "number" && typeof value.firstOrderOffsetPct === "number" && typeof value.distributionCoefficient === "number" && typeof value.leverage === "number" && typeof value.martingaleCoefficient === "number" && typeof value.allocationPct === "number" && typeof value.activeOrderCount === "number" && Array.isArray(value.tpSteps) ? { ...fallback, ...(value as Partial<GeneratedSideConfig>) } : fallback;
+  return { allocation: itemAllocation, long: long as GridOrder[], short: short as GridOrder[], activeLong: item.activeLong, activeShort: item.activeShort, enabledLong: item.enabledLong ?? true, enabledShort: item.enabledShort ?? true, generatedLong: generated(generatedLong, defaultGeneratedSide(true, 30)), generatedShort: generated(generatedShort, defaultGeneratedSide(false, 20)), planningLeverage: item.planningLeverage, mobileSide: item.mobileSide, page: item.page, updatedAt: item.updatedAt };
 }
 
 export function loadWorkspace(): StoredWorkspace {
@@ -100,7 +106,7 @@ export function loadDraft(symbol: string): StoredDraft | null { return loadWorks
 export function saveDraft(symbol: string, value: StoredDraft): StorageWriteResult {
   const workspace = loadWorkspace();
   const normalizedSymbol = symbol.toUpperCase();
-  workspace.drafts[normalizedSymbol] = { allocation: value.allocation, long: value.long, short: value.short, activeLong: value.activeLong, activeShort: value.activeShort, enabledLong: value.enabledLong, enabledShort: value.enabledShort, planningLeverage: value.planningLeverage, mobileSide: value.mobileSide, page: value.page, updatedAt: value.updatedAt };
+  workspace.drafts[normalizedSymbol] = { allocation: value.allocation, long: value.long, short: value.short, activeLong: value.activeLong, activeShort: value.activeShort, enabledLong: value.enabledLong, enabledShort: value.enabledShort, generatedLong: value.generatedLong, generatedShort: value.generatedShort, planningLeverage: value.planningLeverage, mobileSide: value.mobileSide, page: value.page, updatedAt: value.updatedAt };
   const result = saveWorkspace(workspace);
   if (!result.ok) return result;
   return loadDraft(normalizedSymbol) ? result : { ok: false, reason: "черновик не найден после записи" };

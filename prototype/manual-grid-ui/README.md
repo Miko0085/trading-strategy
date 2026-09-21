@@ -65,6 +65,7 @@ curl http://localhost:8000/api/state/BTCUSDT
 ```bash
 psql "$DATABASE_URL" -f migrations/001_initial.sql
 psql "$DATABASE_URL" -f migrations/002_hardening.sql
+psql "$DATABASE_URL" -f migrations/003_shadow_simulation.sql
 ```
 
 ## Tests
@@ -76,7 +77,7 @@ PYTHONPATH=backend pytest -q tests
 cd frontend && npm test -- --run
 ```
 
-Текущий MVP использует REST polling/reconciliation; архитектура `AccountStateService` оставляет место для будущих Wallet/Position/Order WebSocket и REST reconciliation. Проверяются Decimal-расчёты цены, weighted average, TP/P&L, allocation guard, полная сетка против лимита, normalized account state, stale state, read-only boundary, ENV isolation и API-контракт. Production order placement, automatic restructuring, automatic sizing, AI decisions и Risk Manager намеренно не входят в MVP.
+Текущий MVP использует REST polling/reconciliation; архитектура `AccountStateService` оставляет место для будущих Wallet/Position/Order WebSocket и REST reconciliation. Проверяются Decimal-расчёты цены, weighted average, TP/P&L, allocation guard, полная сетка против лимита, normalized account state, stale state, read-only boundary, ENV isolation и API-контракт. Shadow simulator добавляет `POST /api/shadow/generate` и `POST /api/shadow/restructure`: они используют factual Bybit state, создают только `VIRTUAL` proposals и не вызывают write API. Geometry distribution, normalized martingale sizing, capital snapshot, StrategyLot partial fills, trailing и manual field overrides вынесены в pure backend modules и помечены как replaceable/experimental, где canonical formula ещё не подтверждена. Production order placement, automatic execution, universal restructuring formula, AI decisions и Risk Manager намеренно не входят в MVP.
 ## Open questions
 
 - В Hedge Mode нужно отдельно подтвердить семантику отсутствующей zero-side position для gross/net exposure. До подтверждения нормализация сохраняет отсутствующую сторону как `null` и не подставляет искусственный нулевой размер.

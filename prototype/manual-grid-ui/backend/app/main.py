@@ -15,6 +15,7 @@ from .calculations import calculate_configuration
 from .config import Settings
 from .db import RevisionRepository
 from .schemas import GridConfigurationDTO, SaveRevisionDTO
+from .shadow.engine import evaluate_restructuring, generate_grid
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -137,6 +138,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return await service.get(symbol, require_private=account_ready)
         except ReadOnlyBybitError as exc:
             raise HTTPException(502, "Bybit state is unavailable") from exc
+
+    async def shadow_factual(symbol: str) -> dict[str, Any]:
+        if not (app.state.diagnostics["account_state_ready"] or app.state.private_ready):
+            raise ReadOnlyBybitError("Нет подтверждённого состояния аккаунта Bybit")
+        service = app.state.account_service
+        return await service.get_fresh_or_refresh(symbol.upper(), max_age=settings.stale_after_seconds, require_private=True)
+
+    @app.post("/api/shadow/generate")
+    async def shadow_generate(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            symbol = str(payload.get("symbol", "")).upper()
+            configuration = dict(payload.get("configuration") or payload)
+            configuration["symbol"] = symbol
+            factual = await shadow_factual(symbol)
+            return jsonable_encoder(generate_grid(account=factual, configuration=configuration, instrument=factual["instrument"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except ReadOnlyBybitError as exc:
+            raise HTTPException(503, "Нет подтверждённого состояния аккаунта Bybit") from exc
+
+    @app.post("/api/shadow/restructure")
+    async def shadow_restructure(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            symbol = str(payload.get("symbol", "")).upper()
+            factual = await shadow_factual(symbol)
+            return jsonable_encoder(evaluate_restructuring(payload["current"], trigger=str(payload["trigger"]), account=factual, configuration={**payload["configuration"], "symbol": symbol}, instrument=factual["instrument"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except ReadOnlyBybitError as exc:
+            raise HTTPException(503, "Нет подтверждённого состояния аккаунта Bybit") from exc
+
+    @app.post("/api/shadow/revisions")
+    async def save_shadow_revision(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            symbol = str(payload.get("symbol", "")).upper()
+            evaluation = payload["evaluation"]
+            if evaluation.get("execution") != "NOT_SENT":
+                raise ValueError("Shadow revision must remain virtual")
+            return app.state.repository.save_shadow_revision(symbol, evaluation)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 -- API boundary returns safe storage error
+            raise HTTPException(503, "PostgreSQL недоступен или migration 003 не выполнена") from exc
+
+    @app.get("/api/shadow/revisions")
+    async def shadow_revisions(symbol: str | None = None) -> list[dict[str, Any]]:
+        try:
+            return app.state.repository.list_shadow_revisions(symbol.upper() if symbol else None)
+        except Exception as exc:  # noqa: BLE001 -- API boundary returns safe storage error
+            raise HTTPException(503, "PostgreSQL недоступен или migration 003 не выполнена") from exc
 
     async def authoritative_payload(configuration: GridConfigurationDTO, client_payload: dict[str, Any] | None = None, *, force_refresh: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
         client_payload = client_payload or {}
