@@ -4,9 +4,10 @@ import { AccountState } from "../domain";
 import { GeneratedSideConfig, ShadowProposal } from "../shadowTypes";
 import { generatedOrdersToGrid } from "../generatedMapping";
 import { GridOrder, Side } from "../domain";
+import { NumericInput } from "./NumericInput";
 
 function Field({ label, value, step = "0.1", onChange }: { label: string; value: number; step?: string; onChange: (value: number) => void }) {
-  return <label className="generated-field"><span>{label}</span><input inputMode="decimal" type="number" min="0" step={step} value={value} onChange={(event) => onChange(Number(event.target.value))}/></label>;
+  return <label className="generated-field"><span>{label}</span><NumericInput inputMode="decimal" type="number" min="0" step={step} value={value} commitEmpty={false} onValueChange={(next) => { if (next != null) onChange(next); }}/></label>;
 }
 
 function sidePayload(config: GeneratedSideConfig) {
