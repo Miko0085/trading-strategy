@@ -24,3 +24,14 @@ nav button{font-size:14px}
 .generated-field{font-size:10px}
 .generated-field input{font-size:12px}
 .shadow-result{font-size:11px}
+
+.theme-toggle{display:flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 11px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--text);font-size:11px;white-space:nowrap}.theme-toggle:hover{border-color:var(--green);color:var(--green)}.account-strip>.theme-toggle{position:fixed;z-index:40;top:20px;right:30px}.mobile-header .theme-toggle{display:none}
+
+:root[data-theme="light"]{--bg:#f2f5f7;--panel:#ffffff;--panel2:#e8eef2;--line:#c8d2d9;--muted:#5d6d78;--text:#17232b;--green:#168653;--red:#c93652;--amber:#a56d00;--blue:#1670a8}
+:root[data-theme="light"] body{background:radial-gradient(ellipse 60% 40% at 52% -5%,#d8edf0 0,transparent 68%),var(--bg)}
+:root[data-theme="light"] .sidebar{background:rgba(255,255,255,.82)}
+:root[data-theme="light"] .grid-column,:root[data-theme="light"] .state-view{background:#f7fafb}
+:root[data-theme="light"] .account-strip{background:var(--line)}
+:root[data-theme="light"] .account-strip>*,:root[data-theme="light"] .allocation-panel,:root[data-theme="light"] .position-box,:root[data-theme="light"] .plan-box,:root[data-theme="light"] .ladder,:root[data-theme="light"] .risk-meter,:root[data-theme="light"] .state-panel,:root[data-theme="light"] .order-card,:root[data-theme="light"] .drawer,:root[data-theme="light"] .save-modal{background:var(--panel)}
+:root[data-theme="light"] .allocation-box,:root[data-theme="light"] .order-card.queued,:root[data-theme="light"] .tp-line,:root[data-theme="light"] .generated-side,:root[data-theme="light"] .generated-panel{background:var(--panel2)}
+:root[data-theme="light"] .symbol-search,:root[data-theme="light"] input,:root[data-theme="light"] textarea{color:var(--text)}

@@ -48,3 +48,5 @@
   .order-result{font-size:10px}
   .add-order{font-size:13px}
 }
+
+@media (max-width:760px){.mobile-header .theme-toggle{display:flex;min-height:36px;padding:7px 8px;font-size:0}.mobile-header .theme-toggle span{display:none}.mobile-header .theme-toggle svg{width:17px;height:17px}.account-strip>.theme-toggle{display:none}}
