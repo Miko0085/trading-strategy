@@ -77,6 +77,7 @@ function draft(value: unknown): StoredDraft | null {
     const migrated: Partial<GeneratedSideConfig> = {
       ...(value as Partial<GeneratedSideConfig>),
       martingaleMultiplier: legacyMultiplier ?? (typeof value.martingaleMultiplier === "number" ? value.martingaleMultiplier : undefined),
+      logarithmicDistributionEnabled: typeof value.logarithmicDistributionEnabled === "boolean" ? value.logarithmicDistributionEnabled : true,
       ...(side === "long" && legacyUnrealized !== undefined ? { longUnrealizedReinvestPct: legacyUnrealized } : {}),
       ...(side === "short" && legacyUnrealized !== undefined ? { shortUnrealizedReinvestPct: legacyUnrealized } : {}),
     };
