@@ -94,3 +94,6 @@ class ReadOnlyBybitClient:
 
     async def mark_price(self, category: str, symbol: str) -> dict[str, Any]:
         return (await self.public_get("/v5/market/tickers", {"category": category, "symbol": symbol})).get("result", {})
+
+    async def klines(self, category: str, symbol: str, interval: str = "15", limit: int = 200) -> dict[str, Any]:
+        return (await self.public_get("/v5/market/kline", {"category": category, "symbol": symbol, "interval": interval, "limit": limit})).get("result", {})
