@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ApiError, fetchJson } from "../api";
 import { AccountState } from "../domain";
-import { GeneratedSideConfig, ShadowProposal } from "../shadowTypes";
+import { effectiveDistributionCoefficient, GeneratedSideConfig, ShadowProposal } from "../shadowTypes";
 import { generatedOrdersToGrid } from "../generatedMapping";
 import { GridOrder, Side } from "../domain";
 import { NumericInput } from "./NumericInput";
@@ -44,7 +44,7 @@ function sidePayload(config: GeneratedSideConfig) {
     order_count: config.orderCount,
     grid_depth_pct: config.gridDepthPct,
     first_order_offset_pct: config.firstOrderOffsetPct,
-    distribution_coefficient: config.logarithmicDistributionEnabled ? config.distributionCoefficient : 1,
+    distribution_coefficient: effectiveDistributionCoefficient(config),
     leverage: config.leverage,
     martingale_multiplier: config.martingaleMultiplier,
     sizing_mode: config.sizingMode,
