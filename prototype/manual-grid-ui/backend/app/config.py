@@ -74,6 +74,10 @@ class Settings:
         object.__setattr__(self, "module_env_found", (MODULE_ROOT / ".env").is_file())
 
     @property
+    def allowed_origin_list(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in str(self.allowed_origins).split(",") if origin.strip()]
+
+    @property
     def private_configured(self) -> bool:
         return bool(self.bybit_api_key and self.bybit_api_secret)
 
