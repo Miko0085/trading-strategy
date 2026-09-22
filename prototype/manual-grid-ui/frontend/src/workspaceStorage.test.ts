@@ -57,7 +57,22 @@ describe("local workspace storage", () => {
     const loaded = loadDraft("BTCUSDT");
     expect(loaded?.generatedLong.martingaleMultiplier).toBe(1.5);
     expect(loaded?.generatedLong.longUnrealizedReinvestPct).toBe(12);
+    expect(loaded?.generatedLong.logarithmicDistributionEnabled).toBe(true);
     expect(loaded?.generatedLong).not.toHaveProperty("allocationPct");
+  });
+
+  it("persists linear/logarithmic distribution mode independently for each side", () => {
+    const draft = emptyDraft();
+    draft.generatedLong.logarithmicDistributionEnabled = false;
+    draft.generatedLong.distributionCoefficient = 0.8;
+    draft.generatedShort.logarithmicDistributionEnabled = true;
+    draft.generatedShort.distributionCoefficient = 1.5;
+    saveDraft("BTCUSDT", draft);
+    const loaded = loadDraft("BTCUSDT");
+    expect(loaded?.generatedLong.logarithmicDistributionEnabled).toBe(false);
+    expect(loaded?.generatedLong.distributionCoefficient).toBe(0.8);
+    expect(loaded?.generatedShort.logarithmicDistributionEnabled).toBe(true);
+    expect(loaded?.generatedShort.distributionCoefficient).toBe(1.5);
   });
 
   it("removes only the requested symbol draft", () => {
