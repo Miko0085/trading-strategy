@@ -56,7 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await client.close()
 
     app = FastAPI(title="Manual Grid UI API", version="0.2.0", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origins=[settings.allowed_origins], allow_methods=["GET", "POST"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=settings.allowed_origin_list, allow_methods=["GET", "POST"], allow_headers=["*"])
     app.state.settings = settings
     app.state.repository = RevisionRepository(settings.database_url)
 
