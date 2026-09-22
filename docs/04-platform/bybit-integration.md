@@ -22,3 +22,33 @@ Recorder использует только GET/read-only запросы.
 ## Источник истины по API
 
 Используется только актуальная официальная документация Bybit V5.
+
+
+## Визуальный Grid Preview
+
+Интерфейс может отображать свечной график и плановые уровни сетки без торговых write-действий.
+
+Источник рыночных свечей:
+
+- публичный Bybit V5 `GET /v5/market/kline`;
+- backend проксирует и нормализует данные через `GET /api/market/klines/{symbol}`;
+- API key для свечей не требуется.
+
+Отрисовка выполняется через open-source **TradingView Lightweight Charts™**. Это не TradingView-hosted Advanced Chart iframe: такой iframe удобен для обычного графика, но не является нашим программируемым слоем для наложения собственных Grid Order levels.
+
+Grid Preview использует собственные виртуальные данные стратегии:
+
+- Mark Price;
+- Generated Grid preview, если он уже рассчитан;
+- иначе текущую рабочую Long/Short Grid;
+- номер уровня;
+- entry price;
+- qty;
+- процентное расстояние до предыдущего уровня.
+
+Режимы UI:
+
+- desktop — popup/modal с переключением Long / Short;
+- mobile — inline-график сразу под Generated Grid;
+- таймфрейм выбирается пользователем;
+- график остаётся read-only и не отправляет торговые команды.
