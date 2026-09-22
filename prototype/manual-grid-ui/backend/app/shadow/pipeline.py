@@ -58,32 +58,58 @@ def _linked(execution: dict[str, Any], candidate: dict[str, Any]) -> bool:
 def attribute_execution(current: dict[str, Any], execution: dict[str, Any]) -> dict[str, Any]:
     """Prove an execution relation or return UNATTRIBUTED_EXECUTION.
 
-    Buy/Sell alone is never sufficient: positionIdx proves the position side,
-    while an order/TP link (or explicit external manual-close attribution)
-    proves the strategy object and entry/close role.
+    Buy/Sell alone is never sufficient. Hedge mode uses positionIdx=1/2 to
+    prove the position side. In One-Way mode (positionIdx=0), a unique
+    order/TP/manual-close relation may prove both side and role.
     """
-    side = _position_side(execution)
+    position_idx = str(execution.get("position_idx", execution.get("positionIdx", "")))
+    proven_side = _position_side(execution)
     action = str(execution.get("side", ""))
-    if side is None:
+
+    if proven_side is not None:
+        sides = [proven_side]
+    elif position_idx == "0":
+        # One-Way mode has no side-specific positionIdx. Never infer from
+        # Buy/Sell alone; require a unique known strategy relation instead.
+        sides = [side for side in ("long", "short") if side in current.get("sides", {})]
+    else:
         return {"kind": "UNATTRIBUTED_EXECUTION", "reason": "positionIdx does not prove a strategy side"}
-    orders = current.get("sides", {}).get(side, {}).get("orders", [])
 
-    for order in orders:
-        if _linked(execution, order) and _direction_matches(side, action, close=False):
-            return {"kind": "ENTRY", "side": side, "order": order, "level": order.get("level")}
+    entry_matches: list[tuple[str, dict[str, Any]]] = []
+    tp_matches: list[tuple[str, dict[str, Any]]] = []
+    for side in sides:
+        orders = current.get("sides", {}).get(side, {}).get("orders", [])
+        for order in orders:
+            if _linked(execution, order) and _direction_matches(side, action, close=False):
+                entry_matches.append((side, order))
+            for tp in order.get("planned_tp", []):
+                if _linked(execution, tp) and _direction_matches(side, action, close=True):
+                    tp_matches.append((side, order))
 
-    for order in orders:
-        for tp in order.get("planned_tp", []):
-            if _linked(execution, tp) and _direction_matches(side, action, close=True):
-                return {"kind": "TP_CLOSE", "side": side, "order": order, "level": order.get("level")}
+    if len(entry_matches) == 1 and not tp_matches:
+        side, order = entry_matches[0]
+        return {"kind": "ENTRY", "side": side, "order": order, "level": order.get("level")}
+    if len(tp_matches) == 1 and not entry_matches:
+        side, order = tp_matches[0]
+        return {"kind": "TP_CLOSE", "side": side, "order": order, "level": order.get("level")}
+    if entry_matches or tp_matches:
+        return {"kind": "UNATTRIBUTED_EXECUTION", "reason": "execution relation is ambiguous"}
 
     manual_hint = str(execution.get("attribution_hint", execution.get("close_source", ""))).upper()
-    if manual_hint in {"MANUAL", "MANUAL_CLOSE"} and _direction_matches(side, action, close=True):
+    if manual_hint in {"MANUAL", "MANUAL_CLOSE"}:
         requested_level = execution.get("grid_order_level")
-        candidates = [order for order in orders if Decimal(str(order.get("open_qty", "0"))) > 0 and (requested_level is None or str(order.get("level")) == str(requested_level))]
-        if len(candidates) == 1:
-            order = candidates[0]
+        manual_matches: list[tuple[str, dict[str, Any]]] = []
+        for side in sides:
+            if not _direction_matches(side, action, close=True):
+                continue
+            for order in current.get("sides", {}).get(side, {}).get("orders", []):
+                if Decimal(str(order.get("open_qty", "0"))) > 0 and (requested_level is None or str(order.get("level")) == str(requested_level)):
+                    manual_matches.append((side, order))
+        if len(manual_matches) == 1:
+            side, order = manual_matches[0]
             return {"kind": "MANUAL_CLOSE", "side": side, "order": order, "level": order.get("level")}
+        if manual_matches:
+            return {"kind": "UNATTRIBUTED_EXECUTION", "reason": "manual-close relation is ambiguous"}
 
     return {"kind": "UNATTRIBUTED_EXECUTION", "reason": "no proven shadow order, TP, or manual-close relation"}
 
