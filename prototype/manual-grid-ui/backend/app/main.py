@@ -139,6 +139,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ReadOnlyBybitError as exc:
             raise HTTPException(502, "Bybit state is unavailable") from exc
 
+    @app.get("/api/market/klines/{symbol}")
+    async def market_klines(symbol: str, interval: str = "15", limit: int = 200) -> dict[str, Any]:
+        allowed_intervals = {"1", "3", "5", "15", "30", "60", "120", "240", "360", "720", "D", "W", "M"}
+        interval = interval.upper() if interval.upper() in {"D", "W", "M"} else interval
+        if interval not in allowed_intervals:
+            raise HTTPException(422, "Unsupported kline interval")
+        if limit < 20 or limit > 1000:
+            raise HTTPException(422, "Kline limit must be between 20 and 1000")
+        try:
+            result = await app.state.bybit.klines("linear", symbol.upper(), interval=interval, limit=limit)
+            rows = result.get("list", [])
+            candles = [
+                {
+                    "time": int(row[0]) // 1000,
+                    "open": float(row[1]),
+                    "high": float(row[2]),
+                    "low": float(row[3]),
+                    "close": float(row[4]),
+                    "volume": float(row[5]) if len(row) > 5 else None,
+                }
+                for row in reversed(rows)
+                if isinstance(row, list) and len(row) >= 5
+            ]
+            return {"symbol": symbol.upper(), "interval": interval, "source": "BYBIT_PUBLIC", "candles": candles}
+        except (ReadOnlyBybitError, ValueError, TypeError) as exc:
+            raise HTTPException(502, "Не удалось получить публичные свечи Bybit") from exc
+
     async def shadow_factual(symbol: str) -> dict[str, Any]:
         if not (app.state.diagnostics["account_state_ready"] or app.state.private_ready):
             raise ReadOnlyBybitError("Нет подтверждённого состояния аккаунта Bybit")
