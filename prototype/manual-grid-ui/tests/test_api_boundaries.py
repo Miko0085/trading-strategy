@@ -344,3 +344,13 @@ def test_public_kline_endpoint_rejects_unsupported_interval():
     with TestClient(app) as client:
         response = client.get("/api/market/klines/BTCUSDT?interval=2&limit=200")
     assert response.status_code == 422
+
+
+def test_cors_origin_list_accepts_local_and_cloudflare_pages():
+    settings = Settings(
+        database_url="postgresql://unused",
+        bybit_api_key="",
+        bybit_api_secret="",
+        allowed_origins="http://localhost:5173, https://crypto-grid.pages.dev/",
+    )
+    assert settings.allowed_origin_list == ["http://localhost:5173", "https://crypto-grid.pages.dev"]
