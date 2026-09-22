@@ -90,6 +90,24 @@ def test_execution_attribution_proves_long_short_entry_and_close_directions():
     assert short_close["kind"] == "TP_CLOSE" and short_close["side"] == "short"
 
 
+def test_one_way_position_idx_zero_requires_unique_known_relation():
+    state, _ = shadow_state()
+
+    long_entry = attribute_execution(state, execution("ow-le", position_idx=0, side="Buy", order_id="long-entry"))
+    long_close = attribute_execution(state, execution("ow-lc", position_idx=0, side="Sell", order_id="long-tp"))
+    short_entry = attribute_execution(state, execution("ow-se", position_idx=0, side="Sell", order_id="short-entry"))
+    short_close = attribute_execution(state, execution("ow-sc", position_idx=0, side="Buy", order_id="short-tp"))
+
+    assert (long_entry["kind"], long_entry["side"]) == ("ENTRY", "long")
+    assert (long_close["kind"], long_close["side"]) == ("TP_CLOSE", "long")
+    assert (short_entry["kind"], short_entry["side"]) == ("ENTRY", "short")
+    assert (short_close["kind"], short_close["side"]) == ("TP_CLOSE", "short")
+
+    # Buy/Sell plus positionIdx=0 is not enough by itself.
+    unknown = attribute_execution(state, execution("ow-unknown", position_idx=0, side="Buy", order_id="external"))
+    assert unknown["kind"] == "UNATTRIBUTED_EXECUTION"
+
+
 def test_normalized_bybit_execution_flows_into_shadow_revision_end_to_end():
     state, config = shadow_state()
     account_state = normalize_account(
