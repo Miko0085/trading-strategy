@@ -30,3 +30,7 @@ export type ShadowProposal = {
 export function defaultGeneratedSide(enabled: boolean): GeneratedSideConfig {
   return { enabled, orderCount: 10, gridDepthPct: 30, firstOrderOffsetPct: 5, distributionCoefficient: 1.5, logarithmicDistributionEnabled: true, leverage: 2, martingaleMultiplier: 1.2, sizingMode: "NORMALIZED_MARTINGALE", activeOrderCount: 3, tpSteps: [{ movePct: 10, closePct: 50 }], trailingEnabled: false, trailingOffsetPct: 0, realizedReinvestPct: 0, longUnrealizedReinvestPct: 0, shortUnrealizedReinvestPct: 0, manualOverrides: [] };
 }
+
+export function effectiveDistributionCoefficient(config: GeneratedSideConfig): number {
+  return config.logarithmicDistributionEnabled ? config.distributionCoefficient : 1;
+}
