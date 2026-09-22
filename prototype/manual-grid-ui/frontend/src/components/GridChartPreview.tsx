@@ -127,6 +127,10 @@ export function GridChartPreview({ account, long, short, generatedPreview }: { a
     return () => media.removeEventListener("change", sync);
   }, []);
 
+  useEffect(() => {
+    if (generatedPreview && !mobile) setOpen(true);
+  }, [generatedPreview, mobile]);
+
   const selectedOrders = useMemo(() => {
     const generated = proposalOrders(side, generatedPreview);
     return generated.length > 0 ? generated : workingOrders(side, side === "long" ? long : short, account);
