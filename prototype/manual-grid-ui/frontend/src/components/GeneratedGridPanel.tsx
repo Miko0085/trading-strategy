@@ -59,16 +59,16 @@ function sidePayload(config: GeneratedSideConfig) {
   };
 }
 
-export function GeneratedGridPanel({ account, allocation, long, short, currentLong = [], currentShort = [], currentActiveLong = 0, currentActiveShort = 0, onLongChange, onShortChange, onApply, onApplyBoth }: { account: AccountState; allocation: { longPct: number | null; shortPct: number | null; reservePct: number | null }; long: GeneratedSideConfig; short: GeneratedSideConfig; currentLong?: GridOrder[]; currentShort?: GridOrder[]; currentActiveLong?: number; currentActiveShort?: number; onLongChange: (config: GeneratedSideConfig) => void; onShortChange: (config: GeneratedSideConfig) => void; onApply?: (side: Side, orders: GridOrder[], activeOrderCount: number) => void; onApplyBoth?: (long: GridOrder[], longActive: number, short: GridOrder[], shortActive: number) => void }) {
+export function GeneratedGridPanel({ account, allocation, long, short, currentLong = [], currentShort = [], currentActiveLong = 0, currentActiveShort = 0, onLongChange, onShortChange, onPreview, onApply, onApplyBoth }: { account: AccountState; allocation: { longPct: number | null; shortPct: number | null; reservePct: number | null }; long: GeneratedSideConfig; short: GeneratedSideConfig; currentLong?: GridOrder[]; currentShort?: GridOrder[]; currentActiveLong?: number; currentActiveShort?: number; onLongChange: (config: GeneratedSideConfig) => void; onShortChange: (config: GeneratedSideConfig) => void; onPreview?: (proposal: ShadowProposal | null) => void; onApply?: (side: Side, orders: GridOrder[], activeOrderCount: number) => void; onApplyBoth?: (long: GridOrder[], longActive: number, short: GridOrder[], shortActive: number) => void }) {
   const [proposal, setProposal] = useState<ShadowProposal | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const update = (side: "long" | "short", key: keyof GeneratedSideConfig, value: number | boolean) => (side === "long" ? onLongChange : onShortChange)({ ...(side === "long" ? long : short), [key]: value });
+  const update = (side: "long" | "short", key: keyof GeneratedSideConfig, value: number | boolean) => { setProposal(null); onPreview?.(null); (side === "long" ? onLongChange : onShortChange)({ ...(side === "long" ? long : short), [key]: value }); };
 
   const generate = async () => {
     setLoading(true); setError("");
     try {
-      setProposal(await fetchJson<ShadowProposal>("/api/shadow/generate", {
+      const nextProposal = await fetchJson<ShadowProposal>("/api/shadow/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -81,7 +81,9 @@ export function GeneratedGridPanel({ account, allocation, long, short, currentLo
           long: sidePayload(long),
           short: sidePayload(short),
         }),
-      }));
+      });
+      setProposal(nextProposal);
+      onPreview?.(nextProposal);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Shadow расчёт недоступен");
     }
