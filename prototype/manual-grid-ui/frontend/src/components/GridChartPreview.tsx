@@ -117,6 +117,15 @@ export function GridChartPreview({ account, long, short, generatedPreview }: { a
   const [side, setSide] = useState<Side>("long");
   const [open, setOpen] = useState(false);
   const [interval, setInterval] = useState("15");
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const sync = () => setMobile(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   const selectedOrders = useMemo(() => {
     const generated = proposalOrders(side, generatedPreview);
@@ -141,9 +150,9 @@ export function GridChartPreview({ account, long, short, generatedPreview }: { a
       <button type="button" className="outline grid-chart-open" onClick={() => setOpen(true)}>Открыть график</button>
     </div>
 
-    <div className="grid-chart-mobile-inline">{body}</div>
+    {mobile && <div className="grid-chart-mobile-inline">{body}</div>}
 
-    {open && <div className="grid-chart-modal-backdrop" role="dialog" aria-modal="true" aria-label="Preview сетки">
+    {!mobile && open && <div className="grid-chart-modal-backdrop" role="dialog" aria-modal="true" aria-label="Preview сетки">
       <div className="grid-chart-modal">
         <div className="grid-chart-modal-head"><div><b>Grid Preview · {account.symbol}</b><small>{sourceLabel}</small></div><button type="button" aria-label="Закрыть preview" onClick={() => setOpen(false)}><X size={18}/></button></div>
         {body}
