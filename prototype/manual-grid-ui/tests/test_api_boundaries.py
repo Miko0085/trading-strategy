@@ -313,3 +313,34 @@ def test_revisions_have_no_update_or_delete_api():
         assert client.put("/api/revisions/revision-id", json={"comment": "changed"}).status_code == 404
         assert client.patch("/api/revisions/revision-id", json={"comment": "changed"}).status_code == 404
         assert client.delete("/api/revisions/revision-id").status_code == 404
+
+
+def test_public_kline_endpoint_normalizes_bybit_candles(monkeypatch):
+    app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="", bybit_api_secret=""))
+
+    async def fake_klines(category, symbol, interval="15", limit=200):
+        assert (category, symbol, interval, limit) == ("linear", "BTCUSDT", "15", 20)
+        return {"list": [
+            ["2000", "102", "106", "101", "105", "7", "0"],
+            ["1000", "100", "103", "99", "102", "5", "0"],
+        ]}
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state.bybit, "klines", fake_klines)
+        response = client.get("/api/market/klines/BTCUSDT?interval=15&limit=20")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "BYBIT_PUBLIC"
+    assert body["symbol"] == "BTCUSDT"
+    assert body["candles"] == [
+        {"time": 1, "open": 100.0, "high": 103.0, "low": 99.0, "close": 102.0, "volume": 5.0},
+        {"time": 2, "open": 102.0, "high": 106.0, "low": 101.0, "close": 105.0, "volume": 7.0},
+    ]
+
+
+def test_public_kline_endpoint_rejects_unsupported_interval():
+    app = create_app(Settings(database_url="postgresql://unused", bybit_api_key="", bybit_api_secret=""))
+    with TestClient(app) as client:
+        response = client.get("/api/market/klines/BTCUSDT?interval=2&limit=200")
+    assert response.status_code == 422
