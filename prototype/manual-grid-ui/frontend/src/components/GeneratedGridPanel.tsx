@@ -6,12 +6,57 @@ import { generatedOrdersToGrid } from "../generatedMapping";
 import { GridOrder, Side } from "../domain";
 import { NumericInput } from "./NumericInput";
 
-function Field({ label, value, step = "0.1", onChange }: { label: string; value: number; step?: string; onChange: (value: number) => void }) {
-  return <label className="generated-field"><span>{label}</span><NumericInput inputMode="decimal" type="number" min="0" step={step} value={value} commitEmpty={false} onValueChange={(next) => { if (next != null) onChange(next); }}/></label>;
+const DISTRIBUTION_PRESETS = [0.5, 0.7, 0.8, 1, 1.2, 1.5, 2, 2.5, 3];
+const MARTINGALE_PRESETS = [1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.5, 2];
+
+function Field({ label, value, step = "0.1", min = 0, onChange }: { label: string; value: number; step?: string; min?: number; onChange: (value: number) => void }) {
+  return <label className="generated-field"><span>{label}</span><NumericInput inputMode="decimal" type="number" min={min} step={step} value={value} commitEmpty={false} onValueChange={(next) => { if (next != null) onChange(next); }}/></label>;
+}
+
+function PresetField({ label, value, options, min, step, disabled = false, onChange }: { label: string; value: number; options: number[]; min: number; step: string; disabled?: boolean; onChange: (value: number) => void }) {
+  const preset = options.some((item) => item === value);
+  const [custom, setCustom] = useState(!preset);
+
+  return <label className={"generated-field generated-select-field" + (disabled ? " disabled" : "")}>
+    <span>{label}</span>
+    <select
+      disabled={disabled}
+      value={custom ? "custom" : String(value)}
+      onChange={(event) => {
+        if (event.target.value === "custom") {
+          setCustom(true);
+          return;
+        }
+        setCustom(false);
+        onChange(Number(event.target.value));
+      }}
+    >
+      {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      <option value="custom">Своё значение…</option>
+    </select>
+    {custom && !disabled && <NumericInput inputMode="decimal" type="number" min={min} step={step} value={value} commitEmpty={false} onValueChange={(next) => { if (next != null && next >= min) onChange(next); }}/>}
+  </label>;
 }
 
 function sidePayload(config: GeneratedSideConfig) {
-  return { enabled: config.enabled, order_count: config.orderCount, grid_depth_pct: config.gridDepthPct, first_order_offset_pct: config.firstOrderOffsetPct, distribution_coefficient: config.distributionCoefficient, leverage: config.leverage, martingale_multiplier: config.martingaleMultiplier, sizing_mode: config.sizingMode, active_order_count: config.activeOrderCount, tp_steps: config.tpSteps.map((step) => ({ move_pct: step.movePct, close_pct: step.closePct })), trailing_enabled: config.trailingEnabled, trailing_offset_pct: config.trailingOffsetPct, realized_reinvest_pct: config.realizedReinvestPct, long_unrealized_reinvest_pct: config.longUnrealizedReinvestPct, short_unrealized_reinvest_pct: config.shortUnrealizedReinvestPct, manual_overrides: config.manualOverrides };
+  return {
+    enabled: config.enabled,
+    order_count: config.orderCount,
+    grid_depth_pct: config.gridDepthPct,
+    first_order_offset_pct: config.firstOrderOffsetPct,
+    distribution_coefficient: config.logarithmicDistributionEnabled ? config.distributionCoefficient : 1,
+    leverage: config.leverage,
+    martingale_multiplier: config.martingaleMultiplier,
+    sizing_mode: config.sizingMode,
+    active_order_count: config.activeOrderCount,
+    tp_steps: config.tpSteps.map((step) => ({ move_pct: step.movePct, close_pct: step.closePct })),
+    trailing_enabled: config.trailingEnabled,
+    trailing_offset_pct: config.trailingOffsetPct,
+    realized_reinvest_pct: config.realizedReinvestPct,
+    long_unrealized_reinvest_pct: config.longUnrealizedReinvestPct,
+    short_unrealized_reinvest_pct: config.shortUnrealizedReinvestPct,
+    manual_overrides: config.manualOverrides,
+  };
 }
 
 export function GeneratedGridPanel({ account, allocation, long, short, currentLong = [], currentShort = [], currentActiveLong = 0, currentActiveShort = 0, onLongChange, onShortChange, onApply, onApplyBoth }: { account: AccountState; allocation: { longPct: number | null; shortPct: number | null; reservePct: number | null }; long: GeneratedSideConfig; short: GeneratedSideConfig; currentLong?: GridOrder[]; currentShort?: GridOrder[]; currentActiveLong?: number; currentActiveShort?: number; onLongChange: (config: GeneratedSideConfig) => void; onShortChange: (config: GeneratedSideConfig) => void; onApply?: (side: Side, orders: GridOrder[], activeOrderCount: number) => void; onApplyBoth?: (long: GridOrder[], longActive: number, short: GridOrder[], shortActive: number) => void }) {
@@ -19,28 +64,140 @@ export function GeneratedGridPanel({ account, allocation, long, short, currentLo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const update = (side: "long" | "short", key: keyof GeneratedSideConfig, value: number | boolean) => (side === "long" ? onLongChange : onShortChange)({ ...(side === "long" ? long : short), [key]: value });
+
   const generate = async () => {
     setLoading(true); setError("");
-    try { setProposal(await fetchJson<ShadowProposal>("/api/shadow/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: account.symbol, allocation: { long_pct: allocation.longPct ?? 0, short_pct: allocation.shortPct ?? 0, reserve_pct: allocation.reservePct ?? Math.max(0, 100 - (allocation.longPct ?? 0) - (allocation.shortPct ?? 0)) }, long: sidePayload(long), short: sidePayload(short) }) })); } catch (cause) { setError(cause instanceof ApiError ? cause.message : "Shadow расчёт недоступен"); }
+    try {
+      setProposal(await fetchJson<ShadowProposal>("/api/shadow/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: account.symbol,
+          allocation: {
+            long_pct: allocation.longPct ?? 0,
+            short_pct: allocation.shortPct ?? 0,
+            reserve_pct: allocation.reservePct ?? Math.max(0, 100 - (allocation.longPct ?? 0) - (allocation.shortPct ?? 0)),
+          },
+          long: sidePayload(long),
+          short: sidePayload(short),
+        }),
+      }));
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Shadow расчёт недоступен");
+    }
     setLoading(false);
   };
-  const renderSideEditor = (side: "long" | "short", config: GeneratedSideConfig) => <div className={`generated-side ${side}`}><div className="generated-side-head"><b>{side === "long" ? "LONG" : "SHORT"} GENERATED GRID</b><button type="button" className={config.enabled ? "selected" : ""} onClick={() => update(side, "enabled", !config.enabled)}>{config.enabled ? "ON" : "OFF"}</button></div><div className="generated-fields"><Field label="Уровней" step="1" value={config.orderCount} onChange={(value) => update(side, "orderCount", Math.max(1, Math.floor(value)))}/><Field label="Глубина, %" value={config.gridDepthPct} onChange={(value) => update(side, "gridDepthPct", value)}/><Field label="Первый offset, %" value={config.firstOrderOffsetPct} onChange={(value) => update(side, "firstOrderOffsetPct", value)}/><Field label="Distribution" value={config.distributionCoefficient} onChange={(value) => update(side, "distributionCoefficient", value)}/><Field label="Leverage" value={config.leverage} onChange={(value) => update(side, "leverage", value)}/><Field label="Martingale ×" value={config.martingaleMultiplier} onChange={(value) => update(side, "martingaleMultiplier", value)}/><Field label="Active window" step="1" value={config.activeOrderCount} onChange={(value) => update(side, "activeOrderCount", Math.max(1, Math.floor(value)))}/><Field label="Realized reinvest, %" value={config.realizedReinvestPct} onChange={(value) => update(side, "realizedReinvestPct", value)}/><Field label={side === "long" ? "Boost от Short uPnL, %" : "Boost от Long uPnL, %"} value={side === "long" ? config.longUnrealizedReinvestPct : config.shortUnrealizedReinvestPct} onChange={(value) => update(side, side === "long" ? "longUnrealizedReinvestPct" : "shortUnrealizedReinvestPct", value)}/></div><div className="experimental-line"><label><input type="checkbox" checked={config.trailingEnabled} onChange={(event) => update(side, "trailingEnabled", event.target.checked)}/> Trailing <small>EXPERIMENTAL</small></label><span>Unrealized boost — temporary</span></div></div>;
-  // Applying a preview only updates the local planning draft. Validation errors
-  // must remain visible in the grid, but must not make the planning action
-  // impossible; no Bybit write action is performed here.
+
+  const renderSideEditor = (side: "long" | "short", config: GeneratedSideConfig) => <div className={"generated-side " + side}>
+    <div className="generated-side-head">
+      <b>{side === "long" ? "LONG" : "SHORT"} GENERATED GRID</b>
+      <button type="button" className={config.enabled ? "selected" : ""} onClick={() => update(side, "enabled", !config.enabled)}>{config.enabled ? "ON" : "OFF"}</button>
+    </div>
+
+    <div className="generated-mode-card">
+      <label className="generated-toggle">
+        <input type="checkbox" checked={config.logarithmicDistributionEnabled} onChange={(event) => update(side, "logarithmicDistributionEnabled", event.target.checked)}/>
+        <span>
+          <b>Logarithmic distribution of prices</b>
+          <small>{config.logarithmicDistributionEnabled ? "ON · Normalized Power Distribution" : "OFF · Linear distribution (K = 1)"}</small>
+        </span>
+      </label>
+      <small className="generated-formula-hint">
+        {config.logarithmicDistributionEnabled
+          ? "K < 1: первые интервалы шире · K > 1: первые уровни плотнее"
+          : "Линейный режим: уровни распределяются равномерно между первым и последним."}
+      </small>
+    </div>
+
+    <div className="generated-fields">
+      <Field label="Уровней" step="1" value={config.orderCount} onChange={(value) => update(side, "orderCount", Math.max(1, Math.floor(value)))}/>
+      <Field label="Глубина, %" value={config.gridDepthPct} onChange={(value) => update(side, "gridDepthPct", value)}/>
+      <Field label="Первый offset, %" value={config.firstOrderOffsetPct} onChange={(value) => update(side, "firstOrderOffsetPct", value)}/>
+      <PresetField label="Распределение сетки K" value={config.distributionCoefficient} options={DISTRIBUTION_PRESETS} min={0.01} step="0.05" disabled={!config.logarithmicDistributionEnabled} onChange={(value) => update(side, "distributionCoefficient", value)}/>
+      <Field label="Leverage" value={config.leverage} onChange={(value) => update(side, "leverage", value)}/>
+      <PresetField label="Martingale multiplier M" value={config.martingaleMultiplier} options={MARTINGALE_PRESETS} min={1} step="0.05" onChange={(value) => update(side, "martingaleMultiplier", value)}/>
+      <Field label="Active window" step="1" value={config.activeOrderCount} onChange={(value) => update(side, "activeOrderCount", Math.max(1, Math.floor(value)))}/>
+      <Field label="Realized reinvest, %" value={config.realizedReinvestPct} onChange={(value) => update(side, "realizedReinvestPct", value)}/>
+      <Field label={side === "long" ? "Boost от Short uPnL, %" : "Boost от Long uPnL, %"} value={side === "long" ? config.longUnrealizedReinvestPct : config.shortUnrealizedReinvestPct} onChange={(value) => update(side, side === "long" ? "longUnrealizedReinvestPct" : "shortUnrealizedReinvestPct", value)}/>
+    </div>
+
+    <div className="generated-parameter-help">
+      <span><b>K</b> — форма расстановки уровней</span>
+      <span><b>M</b> — рост веса каждого следующего ордера</span>
+    </div>
+
+    <div className="experimental-line">
+      <label><input type="checkbox" checked={config.trailingEnabled} onChange={(event) => update(side, "trailingEnabled", event.target.checked)}/> Trailing <small>EXPERIMENTAL</small></label>
+      <span>Unrealized boost — temporary</span>
+    </div>
+  </div>;
+
   const canApply = (side: Side) => proposal?.sides[side]?.status === "VIRTUAL" && Boolean(proposal.sides[side]?.orders.length);
   const applyReason = (side: Side) => {
     const generated = proposal?.sides[side];
     if (!generated) return "Сначала постройте preview";
-    if (generated.status !== "VIRTUAL") return `Статус стороны: ${generated.status}`;
+    if (generated.status !== "VIRTUAL") return "Статус стороны: " + generated.status;
     if (generated.validation_state === "BLOCKED") return "Сторона заблокирована валидацией";
     if (!generated.orders.length) return "Нет сгенерированных уровней";
     if (generated.orders.some((order) => order.validation_errors?.length)) return "Исправьте ошибки уровней в preview";
     return "";
   };
-  const apply = (side: Side) => { const generated = proposal?.sides[side]; if (!generated || !canApply(side) || !onApply) return; const orders = generatedOrdersToGrid(side, generated.orders, account.markPrice); const active = generated.active_order_count ?? generated.orders.length; onApply(side, orders, active); };
-  const applyBoth = () => { if (!canApply("long") || !canApply("short") || !proposal?.sides.long?.orders.length || !proposal.sides.short?.orders.length || !onApplyBoth) return; const longOrders = generatedOrdersToGrid("long", proposal.sides.long.orders, account.markPrice); const shortOrders = generatedOrdersToGrid("short", proposal.sides.short.orders, account.markPrice); const longActive = proposal.sides.long.active_order_count ?? longOrders.length; const shortActive = proposal.sides.short.active_order_count ?? shortOrders.length; onApplyBoth(longOrders, longActive, shortOrders, shortActive); };
+
+  const apply = (side: Side) => {
+    const generated = proposal?.sides[side];
+    if (!generated || !canApply(side) || !onApply) return;
+    const orders = generatedOrdersToGrid(side, generated.orders, account.markPrice);
+    const active = generated.active_order_count ?? generated.orders.length;
+    onApply(side, orders, active);
+  };
+
+  const applyBoth = () => {
+    if (!canApply("long") || !canApply("short") || !proposal?.sides.long?.orders.length || !proposal.sides.short?.orders.length || !onApplyBoth) return;
+    const longOrders = generatedOrdersToGrid("long", proposal.sides.long.orders, account.markPrice);
+    const shortOrders = generatedOrdersToGrid("short", proposal.sides.short.orders, account.markPrice);
+    const longActive = proposal.sides.long.active_order_count ?? longOrders.length;
+    const shortActive = proposal.sides.short.active_order_count ?? shortOrders.length;
+    onApplyBoth(longOrders, longActive, shortOrders, shortActive);
+  };
+
   const bothReady = canApply("long") && canApply("short");
-  const bothReason = !proposal ? "Сначала постройте preview" : !canApply("long") ? `Long: ${applyReason("long")}` : !canApply("short") ? `Short: ${applyReason("short")}` : "";
- return <section className="generated-panel"><div className="generated-heading"><div><span className="overline">SHADOW / SIMULATION</span><h2>Generated Grid</h2><p>Виртуальные ордера · Bybit write actions отключены</p></div><button className="save" type="button" onClick={() => void generate()} disabled={loading || account.markPrice == null}>{loading ? "Считаю…" : "Построить preview"}</button></div><div className="generated-grid">{renderSideEditor("long", long)}{renderSideEditor("short", short)}</div>{error && <p className="strategy-sides-warning">{error}</p>}{proposal && <div className="shadow-result"><div><b>VIRTUAL · {proposal.symbol}</b><span>Capital base: {proposal.capital_snapshot.capital_base ?? "нет данных"}</span><span>Validation: {proposal.validation.state}</span></div><div className="shadow-sides">{["long", "short"].map((side) => { const currentCount = side === "long" ? currentLong.length : currentShort.length; const currentActive = side === "long" ? currentActiveLong : currentActiveShort; const generatedSide = proposal.sides[side]; const valid = canApply(side as Side); const reason = applyReason(side as Side); const warning = generatedSide?.validation_state === "BLOCKED" || generatedSide?.orders.some((order) => order.validation_errors?.length); return <div key={side}><b>{side.toUpperCase()}</b><span>{generatedSide?.status} · {generatedSide?.orders.length ?? 0} уровней</span><small>{currentCount} → {generatedSide?.orders.length ?? 0} уровней · active {currentActive} → {generatedSide?.active_order_count ?? generatedSide?.orders.length ?? 0}</small><small>{generatedSide?.orders.slice(0, 3).map((order) => `#${order.level} ${order.entry_price} · ${order.qty}`).join(" | ")}</small><button type="button" className="outline generated-apply" onClick={() => apply(side as Side)} disabled={!valid} aria-label={`Применить ${side === "long" ? "Long" : "Short"}`} title={reason || undefined}>Применить {side === "long" ? "Long" : "Short"}</button>{warning && <small className="generated-apply-warning">Preview содержит ошибки валидации; применить в локальную сетку всё равно можно.</small>}{!valid && <small className="generated-apply-hint">{reason}</small>}</div>; })}</div><div className="generated-apply-all"><button type="button" className="save" onClick={applyBoth} disabled={!bothReady} title={bothReason || undefined}>Применить обе</button>{!bothReady && <small className="generated-apply-hint">{bothReason}</small>}{bothReady && proposal.validation.state !== "VALID" && <small className="generated-apply-warning">Общий preview содержит ошибки; обе стороны будут перенесены только в локальный draft.</small>}</div><small>Preview не изменяет рабочую сетку · Bybit write actions отключены</small></div>}</section>;
+  const bothReason = !proposal ? "Сначала постройте preview" : !canApply("long") ? "Long: " + applyReason("long") : !canApply("short") ? "Short: " + applyReason("short") : "";
+
+  return <section className="generated-panel">
+    <div className="generated-heading">
+      <div><span className="overline">SHADOW / SIMULATION</span><h2>Generated Grid</h2><p>Виртуальные ордера · Bybit write actions отключены</p></div>
+      <button className="save" type="button" onClick={() => void generate()} disabled={loading || account.markPrice == null}>{loading ? "Считаю…" : "Построить preview"}</button>
+    </div>
+
+    <div className="generated-grid">{renderSideEditor("long", long)}{renderSideEditor("short", short)}</div>
+
+    {error && <p className="strategy-sides-warning">{error}</p>}
+
+    {proposal && <div className="shadow-result">
+      <div><b>VIRTUAL · {proposal.symbol}</b><span>Capital base: {proposal.capital_snapshot.capital_base ?? "нет данных"}</span><span>Validation: {proposal.validation.state}</span></div>
+      <div className="shadow-sides">{["long", "short"].map((side) => {
+        const currentCount = side === "long" ? currentLong.length : currentShort.length;
+        const currentActive = side === "long" ? currentActiveLong : currentActiveShort;
+        const generatedSide = proposal.sides[side];
+        const valid = canApply(side as Side);
+        const reason = applyReason(side as Side);
+        const warning = generatedSide?.validation_state === "BLOCKED" || generatedSide?.orders.some((order) => order.validation_errors?.length);
+        return <div key={side}>
+          <b>{side.toUpperCase()}</b>
+          <span>{generatedSide?.status} · {generatedSide?.orders.length ?? 0} уровней</span>
+          <small>{currentCount} → {generatedSide?.orders.length ?? 0} уровней · active {currentActive} → {generatedSide?.active_order_count ?? generatedSide?.orders.length ?? 0}</small>
+          <small>{generatedSide?.orders.slice(0, 3).map((order) => "#" + order.level + " " + order.entry_price + " · " + order.qty).join(" | ")}</small>
+          <button type="button" className="outline generated-apply" onClick={() => apply(side as Side)} disabled={!valid} aria-label={"Применить " + (side === "long" ? "Long" : "Short")} title={reason || undefined}>Применить {side === "long" ? "Long" : "Short"}</button>
+          {warning && <small className="generated-apply-warning">Preview содержит ошибки валидации; применить в локальную сетку всё равно можно.</small>}
+          {!valid && <small className="generated-apply-hint">{reason}</small>}
+        </div>;
+      })}</div>
+      <div className="generated-apply-all">
+        <button type="button" className="save" onClick={applyBoth} disabled={!bothReady} title={bothReason || undefined}>Применить обе</button>
+        {!bothReady && <small className="generated-apply-hint">{bothReason}</small>}
+        {bothReady && proposal.validation.state !== "VALID" && <small className="generated-apply-warning">Общий preview содержит ошибки; обе стороны будут перенесены только в локальный draft.</small>}
+      </div>
+      <small>Preview не изменяет рабочую сетку · Bybit write actions отключены</small>
+    </div>}
+  </section>;
 }
