@@ -35,3 +35,20 @@ nav button{font-size:14px}
 :root[data-theme="light"] .account-strip>*,:root[data-theme="light"] .allocation-panel,:root[data-theme="light"] .position-box,:root[data-theme="light"] .plan-box,:root[data-theme="light"] .ladder,:root[data-theme="light"] .risk-meter,:root[data-theme="light"] .state-panel,:root[data-theme="light"] .order-card,:root[data-theme="light"] .drawer,:root[data-theme="light"] .save-modal{background:var(--panel)}
 :root[data-theme="light"] .allocation-box,:root[data-theme="light"] .order-card.queued,:root[data-theme="light"] .tp-line,:root[data-theme="light"] .generated-side,:root[data-theme="light"] .generated-panel{background:var(--panel2)}
 :root[data-theme="light"] .symbol-search,:root[data-theme="light"] input,:root[data-theme="light"] textarea{color:var(--text)}
+
+
+/* Generated Grid math controls */
+.generated-mode-card{border:1px solid var(--line);border-radius:7px;background:var(--panel2);padding:10px 11px;margin:10px 0 12px}
+.generated-toggle{display:flex;align-items:flex-start;gap:9px;cursor:pointer}
+.generated-toggle input{margin-top:3px}
+.generated-toggle span{display:grid;gap:3px}
+.generated-toggle b{font-size:11px;color:var(--text)}
+.generated-toggle small,.generated-formula-hint,.generated-parameter-help{font-size:9px;color:var(--muted);line-height:1.45}
+.generated-formula-hint{display:block;margin-top:7px}
+.generated-select-field select{display:block;width:100%;margin-top:4px;padding:6px 7px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);color:var(--text);font-size:12px;outline:none}
+.generated-select-field select:focus{border-color:var(--green)}
+.generated-select-field>input{display:block;width:100%;margin-top:6px}
+.generated-select-field.disabled{opacity:.55}
+.generated-parameter-help{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 2px}
+.generated-parameter-help b{color:var(--text)}
+@media(max-width:760px){.generated-toggle b{font-size:14px}.generated-toggle small,.generated-formula-hint,.generated-parameter-help{font-size:12px}.generated-select-field select{font-size:15px}}
