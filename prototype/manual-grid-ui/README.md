@@ -1,13 +1,33 @@
 # Manual Grid UI MVP
 
-Изолированный MVP для ручной настройки лонг- и шорт-сетки. Это отдельный будущий execution-контур: он не импортируется Recorder'ом, не использует Recorder SQLite и не содержит Bybit write endpoints.
+Изолированный MVP для ручной настройки Long/Short Grid с read-only Bybit factual state, automatic future sizing и manual volume restructuring.
+
+Основной пользовательский режим — **Manual Grid**. Veles-like Generated Grid остаётся дополнительным/legacy constructor и не определяет текущий основной workflow.
+
+Модуль не импортируется Recorder'ом, не использует Recorder SQLite и не содержит production Bybit write endpoints.
 
 ## Состав
 
-- `frontend/` — React + TypeScript + Vite, один русский экран с обеими сторонами сетки.
-- `backend/` — Python 3.12+ + FastAPI, read-only Bybit adapter и API ревизий.
-- `migrations/` — PostgreSQL schema для аккаунтов, grids, revisions, TP, allocation, snapshots и audit.
-- `tests/` — backend calculation/read-only tests.
+- `frontend/` — React + TypeScript + Vite;
+- `backend/` — Python 3.12+ + FastAPI;
+- `migrations/` — PostgreSQL schema для revisions/audit/shadow state;
+- `tests/` — calculation/read-only/shadow tests.
+
+## Текущий целевой workflow
+
+```text
+Symbol
+→ Factual Bybit State
+→ Long / Short / Reserve Allocation
+→ Manual Grid Geometry
+→ Price or Percentage per level
+→ Per-Order Martingale
+→ Automatic Future Qty
+→ Active Order Window
+→ Manual RECALCULATE_ORDER / RECALCULATE_GRID
+```
+
+Factual fills являются immutable. Пересчитывается только future/pending quantity.
 
 ## Запуск
 
@@ -16,6 +36,8 @@ cd prototype/manual-grid-ui
 cp .env.example .env
 docker compose up -d postgres
 psql "$DATABASE_URL" -f migrations/001_initial.sql
+psql "$DATABASE_URL" -f migrations/002_hardening.sql
+psql "$DATABASE_URL" -f migrations/003_shadow_simulation.sql
 
 python3.12 -m venv .venv
 source .venv/bin/activate
@@ -23,7 +45,7 @@ pip install -r backend/requirements.txt
 uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
-В отдельном терминале:
+Frontend:
 
 ```bash
 cd prototype/manual-grid-ui/frontend
@@ -31,26 +53,34 @@ npm install
 npm run dev
 ```
 
-Открыть `http://localhost:5173`. Если read-only ключ не найден или backend недоступен, интерфейс показывает `нет данных` и блокирует расчёт/сохранение; фиктивные балансы и цены не используются.
+Открыть `http://localhost:5173`.
 
 ## ENV
 
-- `DATABASE_URL` — PostgreSQL нового модуля, только process env или `prototype/manual-grid-ui/.env`;
-- `BYBIT_API_KEY`, `BYBIT_API_SECRET` — read-only ключ; process env → UI `.env` → root `.env`;
-- `BYBIT_TESTNET` — `true`/`false`, с тем же приоритетом только для Bybit;
-- `MANUAL_GRID_ALLOWED_ORIGINS` — origin frontend, только process env или UI `.env`;
-- `MANUAL_GRID_ALLOW_FIXTURE_DATA` — только локальный тестовый режим, по умолчанию `false`;
-- `MANUAL_GRID_STALE_AFTER_SECONDS` — технический порог устаревания account state, по умолчанию `30`.
+- `DATABASE_URL` — PostgreSQL нового модуля;
+- `BYBIT_API_KEY`, `BYBIT_API_SECRET` — read-only key;
+- `BYBIT_TESTNET` — `true`/`false`;
+- `MANUAL_GRID_ALLOWED_ORIGINS` — comma-separated frontend origins;
+- `MANUAL_GRID_ALLOW_FIXTURE_DATA` — только локальный тестовый режим;
+- `MANUAL_GRID_STALE_AFTER_SECONDS` — порог устаревания factual state.
 
-Root `.env` не переносится и не импортируется как конфигурация Recorder: из него читаются только три ключа Bybit, когда они не заданы process env или UI `.env`. `DATABASE_URL` и UI-настройки из root `.env` игнорируются.
+Секреты не коммитить. `VITE_*` frontend variables нельзя использовать для Bybit/API/DB secrets.
 
-Backend получает factual `mark_price`, `totalAvailableBalance` и instrument filters сам через read-only Bybit. Значения из браузера являются только intent/preview и не участвуют в production authoritative calculation. Capital Guard использует `full_grid_planned_margin / allocation_limit × 100`; текущая позиция показывается отдельным factual context и не вычитается второй раз из available margin.
+## Factual Bybit State
 
-Округление к tick size сейчас является техническим preview/calculation policy. Перед любым будущим write execution правила округления должны быть отдельно подтверждены.
+Backend получает factual data сам:
+- Mark Price;
+- wallet/equity/available margin;
+- positions;
+- open orders;
+- instrument limits;
+- position mode.
 
-Backend при наличии ключа вызывает только `GET /v5/user/query-api` перед private integration и отказывается запускаться, если `readOnly != 1`. В коде отсутствуют place/amend/cancel/close/write методы.
+Значения из браузера являются intent и не должны заменять authoritative factual state.
 
-Диагностика подключения без секретов:
+Backend проверяет read-only key через Bybit и не должен выполнять private write actions.
+
+Диагностика:
 
 ```bash
 curl http://localhost:8000/api/health
@@ -58,39 +88,136 @@ curl 'http://localhost:8000/api/diagnostics/bybit?symbol=BTCUSDT'
 curl http://localhost:8000/api/state/BTCUSDT
 ```
 
-При ошибке read-only проверки backend продолжает запускаться с `private_state_ready=false`; public market endpoints остаются доступными. `/api/diagnostics/bybit` показывает только наличие credentials, источник bundle, окружение и статусы query-api/wallet/positions/open-orders.
+## Manual Grid Geometry
 
-## Migration
+Для каждого уровня планируется поддержка:
+- абсолютной Entry Price;
+- либо процентного spacing.
 
-```bash
-psql "$DATABASE_URL" -f migrations/001_initial.sql
-psql "$DATABASE_URL" -f migrations/002_hardening.sql
-psql "$DATABASE_URL" -f migrations/003_shadow_simulation.sql
+#1 относительно reference Mark Price, #2+ может задаваться относительно предыдущего уровня.
+
+Grid Geometry и Grid Sizing независимы.
+
+## Per-Order Martingale
+
+В основном Manual Grid каждый следующий уровень имеет собственный multiplier:
+
+```text
+w1 = 1
+w2 = w1 × M2
+w3 = w2 × M3
+...
 ```
+
+Глобальный `M^i` остаётся только частью optional Generated Grid.
+
+## Automatic Future Sizing
+
+Целевой calculation pipeline:
+
+```text
+Effective Side Budget
+- Factual Used Capital
+- Locked Future Capital
+= Available Future Budget
+
+Available Future Budget
+→ cumulative per-order weights
+→ normalized level budgets
+→ leverage
+→ entry price
+→ coin qty
+→ ROUND_DOWN by qtyStep
+→ Bybit min validations
+```
+
+Ключевые поля:
+
+```text
+configured_qty
+filled_qty
+remaining_entry_qty
+open_qty
+closed_qty
+```
+
+Invariant:
+
+```text
+configured_qty >= filled_qty
+configured_qty = filled_qty + remaining_entry_qty
+```
+
+## Manual Volume Restructuring
+
+Два подтверждённых scope:
+
+### RECALCULATE_ORDER
+
+Пересчитывает future qty только выбранного Grid Order. Остальные уровни не должны автоматически изменяться.
+
+### RECALCULATE_GRID
+
+Получает fresh factual state и перераспределяет весь eligible future budget стороны между pending levels по текущей cumulative Martingale chain.
+
+Добавленный новый уровень может быть рассчитан отдельно либо включён в полный перерасчёт сетки.
+
+## Active Order Window
+
+Полная логическая Grid может быть больше количества одновременно активных Entry orders на Bybit.
+
+Трейдер задаёт `active_order_count` независимо для Long и Short. Остальные levels остаются queued внутри платформы.
+
+## Generated Grid
+
+Текущий Generated Grid не удаляется.
+
+Подтверждённые формулы:
+- normalized power distribution для geometry;
+- legacy/global geometric martingale `w_i = M^(i-1)`.
+
+Это secondary constructor, а не основной Manual Grid workflow.
+
+## Shadow API
+
+Текущие endpoints `POST /api/shadow/generate` и `POST /api/shadow/restructure` создают только virtual proposals и не вызывают write API.
+
+Существующий код shadow sizing ещё должен быть приведён к новой Manual Grid per-order Martingale модели; документация описывает целевую подтверждённую механику, а не утверждает, что весь код уже реализован.
 
 ## Tests
 
 ```bash
 cd prototype/manual-grid-ui
-pip install -r backend/requirements.txt
 PYTHONPATH=backend pytest -q tests
-cd frontend && npm test -- --run
+cd frontend
+npm test -- --run
+npm run build
 ```
 
-Текущий MVP использует REST polling/reconciliation; архитектура `AccountStateService` оставляет место для будущих Wallet/Position/Order WebSocket и REST reconciliation. Проверяются Decimal-расчёты цены, weighted average, TP/P&L, allocation guard, полная сетка против лимита, normalized account state, stale state, read-only boundary, ENV isolation и API-контракт. Shadow simulator добавляет `POST /api/shadow/generate` и `POST /api/shadow/restructure`: они используют factual Bybit state, создают только `VIRTUAL` proposals и не вызывают write API. Geometry distribution, normalized martingale sizing, capital snapshot, StrategyLot partial fills, trailing и manual field overrides вынесены в pure backend modules и помечены как replaceable/experimental, где canonical formula ещё не подтверждена. Production order placement, automatic execution, universal restructuring formula, AI decisions и Risk Manager намеренно не входят в MVP.
-## Open questions
-
-- В Hedge Mode нужно отдельно подтвердить семантику отсутствующей zero-side position для gross/net exposure. До подтверждения нормализация сохраняет отсутствующую сторону как `null` и не подставляет искусственный нулевой размер.
-- Audit фиксируется при сохранении immutable revision, а не на каждое изменение draft-поля.
+После изменения sizing/restructuring обязательны новые tests на:
+- PRICE/PERCENT geometry;
+- cumulative per-order Martingale;
+- factual capital subtraction;
+- `RECALCULATE_ORDER`;
+- `RECALCULATE_GRID`;
+- immutable filled_qty;
+- adding new levels;
+- Active Order Window;
+- Bybit instrument limits.
 
 ## Локальные черновики
 
-Конфигурация конструктора автоматически сохраняется в `localStorage` браузера под ключом `manual-grid-workspace:v1`. Черновики изолированы по символу: переключение BTCUSDT/ETHUSDT сохраняет текущую сетку и восстанавливает отдельную конфигурацию выбранного символа. В черновике хранятся только пользовательские намерения: allocation, enabled Long/Short, уровни, TP, заметки, active window, плановый leverage, выбранная сторона и вкладка.
+Workspace хранится в browser `localStorage` и содержит только пользовательский intent. Factual Bybit state, secrets, API credentials и authoritative calculations туда не записываются.
 
-Это локальное состояние конкретного браузера и устройства: оно не синхронизируется между браузерами, устройствами или пользователями, не является PostgreSQL Revision и не заменяет сохранение версии. Кнопка «Сбросить черновик» удаляет только черновик текущего символа; после «Сохранить версию» локальный черновик сохраняется.
+Persistence привязан к browser origin. Для постоянной web-ссылки используется стабильный Pages/custom domain, а backend может быть доступен через отдельный постоянный HTTPS endpoint/tunnel.
 
-Фактические данные Bybit (mark price, wallet/equity/margins, positions, open orders, fills, PnL, instrument и ошибки подключения), authoritative calculation result и история ревизий в `localStorage` не записываются. При восстановлении черновика factual account state заново запрашивается у backend, а calculation выполняется снова. Секреты и API credentials в localStorage не сохраняются.
+## Не входит в текущий автоматический MVP
 
-Каждая запись проверяется обратным чтением: версия workspace, выбранный символ и сохранённый draft должны совпасть с ожидаемыми. При недоступном или переполненном `localStorage` интерфейс показывает предупреждение и не выдаёт такую запись за подтверждённо сохранённую. В development в browser console доступна безопасная диагностика origin, ключа и списка символов без secrets.
-
-Persistence привязан к origin браузера. При использовании Cloudflare Quick Tunnel после reload должен сохраняться тот же hostname; новый `trycloudflare.com` hostname означает новый `localStorage`. Для pilot-сессии используйте стабильный tunnel URL.
+- automatic restructuring triggers;
+- automatic recovery;
+- automatic reinvest triggers;
+- autonomous rebase/trailing decisions;
+- AI trading decisions;
+- external news/signals/indicators;
+- production write execution без отдельного решения;
+- autonomous Risk Manager.
