@@ -1,234 +1,232 @@
 # Механика сетки
 
-**Статус: ПОДТВЕРЖДЁННАЯ БАЗОВАЯ МЕХАНИКА / ПОДТВЕРЖДЁННАЯ ГЕНЕРАЦИЯ СЕТКИ / ОТКРЫТЫЕ ПРАВИЛА РЕСТРУКТУРИЗАЦИИ**
+**Статус: ПОДТВЕРЖДЁННАЯ БАЗОВАЯ МЕХАНИКА / MANUAL GRID PRIMARY / GENERATED GRID OPTIONAL**
 
-## Ордера сетки
+## 1. Основной режим текущего MVP
 
-Ордера сетки (Grid Orders) — это **лимитные ордера (Limit Orders)**.
+Текущий основной workflow — ручная настройка Grid Geometry с автоматическим расчётом будущего объёма.
 
-Платформа поддерживает два способа построения сетки:
+```text
+Trader sets levels
+→ Capital Allocation
+→ Per-Order Martingale Chain
+→ Automatic Future Qty
+→ Active Order Window
+→ Execution
+→ Factual Fills
+→ Manual Volume Restructuring
+```
 
-1. **Manual Grid** — трейдер задаёт параметры уровней вручную.
-2. **Generated Grid** — уровни и объёмы рассчитываются детерминированно по подтверждённым формулам ниже.
+Generated Grid сохраняется как дополнительный конструктор и не является основным способом работы трейдера.
 
-После генерации каждый уровень становится обычным GridOrderConfig и может быть далее изменён через разрешённый manual override flow.
+## 2. Grid Order
 
-## Первый ордер
+Grid Order — логический лимитный Entry-уровень Long или Short.
 
-При запуске стратегии фиксируется текущая **Mark Price**.
+Каждый уровень является отдельной настраиваемой единицей и может иметь собственные:
+- Entry Price / offset;
+- per-order Martingale multiplier;
+- TP Steps;
+- note;
+- runtime/factual state после fills.
 
-Первый Long-ордер находится ниже неё, первый Short-ордер — выше.
+## 3. Первый ордер и startup offset
 
-В Manual Grid используется заданный процентный offset.
+При запуске стратегии фиксируется текущая Mark Price.
 
-В Generated Grid первый уровень задаётся параметром первой цены / первого offset, а последний — параметром глубины сетки.
+Для первого уровня:
+- Long располагается ниже Mark Price;
+- Short располагается выше Mark Price.
 
-## Manual Grid
+Трейдер задаёт startup offset, после чего система получает фактическую цену первого Entry с учётом `tickSize`.
 
-В ручном режиме каждый следующий ордер может иметь собственный процентный отступ от предыдущего лимитного уровня.
+## 4. Manual Grid Geometry
+
+Трейдер самостоятельно определяет, где должны находиться уровни.
+
+Для уровня допускаются два способа задания intent:
+
+### Absolute Price
+
+Трейдер задаёт желаемую Entry Price напрямую.
+
+### Percentage Spacing
+
+- #1: процент относительно reference/Mark Price;
+- #2+: процент относительно предыдущего логического уровня.
+
+Цена и процент являются двумя представлениями одной геометрии. Система не должна автоматически заменять вручную заданную геометрию Veles-like распределением.
+
+## 5. Grid Geometry и Grid Sizing независимы
+
+```text
+Grid Geometry
+→ цены и расстояния между уровнями
+
+Grid Sizing
+→ распределение будущего капитала и qty
+```
+
+Перерасчёт объёма не должен автоматически менять цены уровней.
+
+## 6. Capital Allocation
+
+Для Long и Short задаётся собственная доля капитала. Reserve остаётся отдельной защищённой долей.
+
+На момент перерасчёта система использует свежий factual account state и определяет бюджет стороны.
+
+```text
+Side Budget
+- Factual Used Capital
+- Locked Future Capital
+= Available Future Budget
+```
+
+Точная production-семантика `capital_base` ведётся отдельно; нельзя допускать двойного учёта PnL.
+
+## 7. Per-Order Martingale
+
+В Manual Grid нет одного глобального Martingale multiplier, который автоматически строит `M^i` для всех уровней.
+
+У каждого уровня начиная со второго есть свой multiplier относительно предыдущего веса:
+
+```text
+w1 = 1
+w2 = w1 × M2
+w3 = w2 × M3
+...
+wn = w(n-1) × Mn
+```
 
 Пример:
 
 ```text
-Mark Price при запуске = 100
-Long Order #1: -10% → 90
-Long Order #2: -10% от 90 → 81
-Long Order #3: -20% от 81 → 64.8
+#1 weight = 1.00
+#2 M2 = 1.20 → weight = 1.20
+#3 M3 = 1.50 → weight = 1.80
+#4 M4 = 1.10 → weight = 1.98
 ```
 
-Проценты здесь только пример. Каждый Grid Order настраивается индивидуально.
+Эти cumulative weights задают относительное распределение future budget.
 
-## Generated Grid — распределение уровней
+## 8. Automatic Future Qty
 
-**Тип распределения: normalized power distribution между первым и последним уровнем.**
+После того как цены и Martingale chain заданы, система рассчитывает qty.
 
-Это подтверждённая формула генерации уровней, восстановленная ранее по знакомой модели Veles и принятой таблице расчёта.
-
-Параметры:
-
-- `P₁` — цена первого Grid Order;
-- `Pₙ` — цена последнего Grid Order;
-- `N` — количество уровней;
-- `K` — коэффициент распределения;
-- `i` — номер уровня от 1 до N.
-
-Для Long:
+Концептуально:
 
 ```text
-P_i = P₁ - (P₁ - Pₙ) × ((i - 1) / (N - 1))^K
+normalized_weight_i = weight_i / Σ eligible_weights
+level_margin_budget_i = AvailableFutureBudget × normalized_weight_i
+planned_notional_i = level_margin_budget_i × leverage
+raw_future_qty_i = planned_notional_i / entry_price_i
 ```
 
-Эквивалентная формула через расстояние от anchor:
+После этого qty нормализуется `ROUND_DOWN` по `qtyStep` и проходит проверки Bybit `minOrderQty` и `minNotionalValue`.
+
+Фактический `configured_qty` может состоять из:
 
 ```text
-d_i = d_first + (d_last - d_first) × ((i - 1) / (N - 1))^K
+configured_qty = filled_qty + remaining_entry_qty
 ```
 
-После этого для Long:
+## 9. Factual volume immutable
+
+После fill уже исполненный объём нельзя перераспределить между уровнями.
 
 ```text
-P_i = Anchor × (1 - d_i / 100)
+filled_qty → factual history
+open_qty   → factual exposure
+remaining_entry_qty → future intent, может быть пересчитан
 ```
 
-Для Short:
+Partial fill не превращает один Grid Order в несколько логических уровней.
+
+## 10. Manual Volume Restructuring
+
+Поддерживаются два ручных scope.
+
+### RECALCULATE_ORDER
+
+Пересчитывается только future qty выбранного ордера.
+
+Это действие не должно автоматически каскадировать изменение на последующие уровни. Оно обязано проверить, хватает ли свободного future budget.
+
+### RECALCULATE_GRID
+
+Пересчитывается вся eligible future часть стороны:
 
 ```text
-P_i = Anchor × (1 + d_i / 100)
+fresh factual state
+→ side budget
+→ subtract factual used capital
+→ subtract locked future capital
+→ rebuild cumulative per-order weights
+→ normalize remaining future budget
+→ calculate new pending qty
+→ Grid Revision
 ```
 
-Граничные условия:
+## 11. Добавление новых уровней
+
+Трейдер может добавить #6, #7, #8 и далее в уже существующую логическую сетку.
+
+После добавления нового уровня доступны два действия:
+- рассчитать future qty только нового уровня;
+- перераспределить future budget всей оставшейся сетки.
+
+Исполненные части существующих ордеров остаются неизменными.
+
+## 12. Active Order Window
+
+Полная логическая сетка может иметь любое разрешённое число уровней, но на Bybit одновременно находится только заданное количество Entry orders.
+
+Пример:
 
 ```text
-i = 1  → P_i = P₁
-i = N  → P_i = Pₙ
+Logical Grid: #1 ... #10
+Active Order Window = 3
+
+Bybit: #1 #2 #3
+#1 filled
+→ activate #4
 ```
 
-### Смысл коэффициента K
+Точный runtime trigger partial/full replacement ведётся как execution policy, но сама модель Active Window подтверждена.
 
-- `K = 1` — линейное распределение между первым и последним уровнем.
-- `K < 1` — более быстрый уход от первого уровня; первые интервалы крупнее, затем уровни уплотняются.
-- `K > 1` — первые уровни плотнее друг к другу, хвост сетки растягивается сильнее.
+## 13. Take Profit
 
-### Logarithmic distribution of prices — ON/OFF
+После первого factual fill появляется StrategyLot / Filled Allocation.
 
-В интерфейсе Generated Grid есть отдельный переключатель **Logarithmic distribution of prices**.
+TP считается от:
+- factual average fill;
+- factual open qty.
 
-- **ON** — используется выбранный коэффициент `K` и подтверждённая Normalized Power Distribution.
-- **OFF** — генератор принудительно использует `K = 1`, то есть линейное равномерное распределение уровней между первой и последней границей.
+Неисполненная часть Entry не участвует в TP.
 
-Выбранное пользователем значение `K` сохраняется в локальном draft даже при выключенном режиме и снова применяется после включения. Это позволяет переключаться Linear ↔ Non-linear без потери настройки.
+## 14. Generated Grid — optional constructor
 
-В UI коэффициент `K` и `martingale_multiplier M` выбираются из безопасных preset dropdown-значений; для нестандартной настройки остаётся вариант «Своё значение…».
+Старый Veles-like constructor сохраняется в коде как дополнительная функция.
 
-### Подтверждённый пример
-
-Исходные параметры старой расчётной модели:
+Для него по-прежнему известна normalized power distribution:
 
 ```text
-P₁ = 2644.70
-Pₙ = 1643
-N = 17
-K = 0.8
+P_i = P1 - (P1 - PN) × ((i - 1)/(N - 1))^K
 ```
 
-Первые уровни получаются приблизительно:
-
-```text
-2644.70
-2535.70
-2454.91
-2382.19
-2314.26
-...
-1643.00
-```
-
-Excel-форма этой же модели:
-
-```excel
-=P1-(P1-PN)*(((i-1)/(N-1))^K)
-```
-
-Текущий backend `distribution_vector()` должен реализовывать именно эту математическую модель в процентных расстояниях.
-
-## Generated Grid — Martingale по объёму
-
-**Тип sizing: normalized geometric martingale по номинальному бюджету уровней.**
-
-Параметр:
-
-```text
-martingale_multiplier = M
-```
-
-Семантика:
-
-- `M = 1.00` — одинаковый вес уровней;
-- `M = 1.20` — каждый следующий уровень имеет вес на 20% больше предыдущего;
-- `M = 1.50` — каждый следующий уровень имеет вес на 50% больше предыдущего.
-
-Сырые веса:
+и legacy/global geometric martingale:
 
 ```text
 w_i = M^(i-1)
 ```
 
-Пример при `M = 1.20`:
+Но эти формулы относятся только к Generated Grid и не должны ограничивать или определять Manual Grid.
 
-```text
-1.0000
-1.2000
-1.4400
-1.7280
-2.0736
-...
-```
+## 15. Что пока остаётся OPEN
 
-Для фиксированного бюджета стороны веса нормализуются:
-
-```text
-W = Σ w_i
-normalized_weight_i = w_i / W
-level_margin_budget_i = SideBudget × normalized_weight_i
-```
-
-При использовании плеча:
-
-```text
-planned_notional_i = level_margin_budget_i × leverage
-raw_qty_i = planned_notional_i / entry_price_i
-```
-
-После этого `qty` нормализуется вниз по `qtyStep`.
-
-Важно: мартингейл определяет **относительный рост номинального бюджета уровней**, а количество монет дополнительно зависит от цены конкретного Entry.
-
-## Связь Geometry и Sizing
-
-Geometry и Sizing — независимые части алгоритма:
-
-```text
-Grid Geometry
-→ где находятся уровни
-
-Grid Sizing / Martingale
-→ какой бюджет и qty получает каждый уровень
-```
-
-Изменение Martingale не должно менять цены уровней. Изменение коэффициента распределения не должно само по себе менять формулу sizing.
-
-## Объём
-
-В Manual Grid целевой объём конкретного Grid Order может задаваться вручную в монетах.
-
-В Generated Grid целевые количества рассчитываются из side budget, leverage, цены уровня и normalized martingale weights.
-
-В любом случае factual truth после исполнения — фактически исполненный объём `filled_qty`.
-
-## Частичное исполнение
-
-Если один лимитный Grid Order исполняется несколькими частями из-за ликвидности, он всё равно остаётся **одним логическим Grid Order**.
-
-Алгоритм учитывает фактически исполненный объём (`filled_qty`) и использует именно его для расчёта разгрузки.
-
-## Сколько лимитных ордеров держать на бирже
-
-Полная логическая сетка может быть больше, чем количество одновременно активных заявок.
-
-Трейдер задаёт Active Order Window, например 3, 4 или 5.
-
-По мере исполнения уровня система активирует следующий уровень внутренней сетки.
-
-## Изменение сетки
-
-Неисполненный future Grid Order можно изменить через новую Grid Revision.
-
-После фактического исполнения совершившаяся сделка является immutable factual history. Дальше управление относится к фактически набранному объёму и future intent.
-
-## Реструктуризация
-
-Геометрия текущего Grid Cycle и sizing рассматриваются отдельно.
-
-Обычный sizing restructuring не должен автоматически менять подтверждённую геометрию уровней. Перемещение pending geometry относится к отдельной логике trailing/re-anchor.
-
-Формулы Generated Grid выше считаются подтверждённой механикой начального построения сетки. Формулы полной динамической реструктуризации капитала, reinvestment и recovery описываются отдельно и могут развиваться независимо.
+- автоматические triggers перерасчёта;
+- automatic recovery после TP;
+- точная production-формула capital_base;
+- правила автоматического reinvest;
+- полный rebase/trailing policy;
+- autonomous restructuring decisions.
