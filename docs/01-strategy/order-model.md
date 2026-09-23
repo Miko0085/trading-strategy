@@ -16,64 +16,121 @@ TP / Partial Close / Full Close
 
 ## 1. GridOrderConfig — намерение трейдера
 
-Хранит:
+Хранит как минимум:
 - номер уровня;
 - Long / Short;
-- процентный отступ;
+- `entry_input_mode`: PRICE | PERCENT;
+- `entry_price` и/или `offset_pct`;
+- `martingale_multiplier` конкретного уровня;
 - `configured_qty`;
+- `filled_qty`;
+- `remaining_entry_qty`;
 - TP Steps;
+- source / sizing source;
 - revision конфигурации.
+
+Для основного Manual Grid трейдер задаёт геометрию и per-order Martingale, а `configured_qty`/`remaining_entry_qty` рассчитываются системой.
 
 Это описание того, **что система собирается сделать**, а не факт исполнения.
 
-## 2. ExchangeOrder — реальная заявка на Bybit
+## 2. Per-Order Martingale
+
+В Manual Grid коэффициент уровня относится к предыдущему весу:
+
+```text
+w1 = 1
+w2 = w1 × M2
+w3 = w2 × M3
+...
+```
+
+Коэффициент является частью intent конкретного GridOrderConfig.
+
+## 3. ExchangeOrder — реальная заявка на Bybit
 
 Это конкретная биржевая заявка с собственным exchange order ID и состоянием.
 
-Одна конфигурация может порождать одну или несколько биржевых заявок в течение её жизненного цикла, например после amend/cancel-replace.
+Один GridOrderConfig может порождать одну или несколько ExchangeOrders в течение жизненного цикла, например после amend/cancel-replace.
 
-## 3. Execution / Fill — факт сделки
+Не все GridOrderConfig одновременно обязаны иметь ExchangeOrder: Active Order Window может держать часть уровней в очереди внутри платформы.
+
+## 4. Execution / Fill — факт сделки
 
 Execution — фактическое исполнение на бирже.
 
 Один ExchangeOrder может иметь несколько executions. Они не создают новые Grid Orders.
 
-## 4. StrategyLot / Filled Allocation — фактически набранный объём стратегии
+## 5. StrategyLot / Filled Allocation
 
-После **первого фактического fill** система уже должна отдельно учитывать исполненный объём конкретного Grid Order, потому что на него может быть выставлена разгрузка.
+После первого factual fill система отдельно учитывает исполненный объём конкретного Grid Order.
 
 ```text
 configured_qty = 1.0
-
 fill #1 = 0.3
-→ filled_qty = 0.3
-→ существует фактически набранный объём
-→ можно рассчитать TP на 0.3
 
-fill #2 = 0.2
-→ filled_qty = 0.5
-→ тот же логический StrategyLot / Filled Allocation обновляется
+filled_qty = 0.3
+remaining_entry_qty = 0.7
 ```
 
-Архитектурно этот объект может иметь состояние `ACCUMULATING`, пока исходный Entry Order продолжает получать fills.
+После следующего fill:
 
-Это заменяет прежнюю модель, где Strategy Lot появлялся только после полного исполнения `configured_qty`.
+```text
+fill #2 = 0.2
+filled_qty = 0.5
+```
 
-## 5. Закрытия
+Это тот же логический StrategyLot.
 
-TP или досрочное закрытие изменяют:
+## 6. Factual и future части нельзя смешивать
+
+```text
+filled_qty / open_qty
+→ factual reality
+→ не пересчитывается реструктуризацией объёма
+
+remaining_entry_qty
+→ future intent
+→ может быть изменён
+```
+
+`configured_qty` после реструктуризации может измениться только так, чтобы не нарушалось:
+
+```text
+configured_qty >= filled_qty
+configured_qty = filled_qty + remaining_entry_qty
+```
+
+## 7. Restructuring scope
+
+Для volume restructuring используются два режима:
+
+```text
+RECALCULATE_ORDER
+RECALCULATE_GRID
+```
+
+Точечный режим меняет future intent одного ордера. Полный режим может изменить future qty всех eligible pending levels стороны.
+
+## 8. Закрытия
+
+TP или manual close изменяют:
 - `open_qty`;
 - `closed_qty`;
-- realized PnL конкретного объёма.
+- realized PnL конкретного StrategyLot.
 
-## История изменений
+## 9. История изменений
 
-Любая правка через интерфейс должна сохранять:
-- состояние до;
-- состояние после;
+Любая существенная правка через интерфейс должна сохранять:
+- before;
+- after;
 - timestamp;
-- источник изменения;
+- source;
 - Grid Revision;
+- restructuring scope/reason, если применимо;
 - связь с ExchangeOrder / Execution / StrategyLot.
 
-Цель — всегда уметь сопоставить **намерение → исполнение → результат**.
+Цель — всегда восстановить цепочку:
+
+```text
+INTENT → PLANNED QTY → EXCHANGE ORDER → FILL → FACTUAL LOT → RESTRUCTURED FUTURE INTENT
+```
