@@ -2,7 +2,9 @@
 
 ## Основной принцип
 
-Исследование стратегии, доменная модель и механический execution могут развиваться параллельно, но autonomous decisions нельзя реализовывать раньше подтверждения правил.
+Исследование стратегии, доменная модель и механический execution развиваются параллельно, но autonomous decisions нельзя реализовывать раньше подтверждения правил.
+
+Текущий продуктовый приоритет — Manual Grid с автоматическим future sizing и ручной реструктуризацией объёма.
 
 ## Этап 1A — Recorder / Strategy Capture
 
@@ -11,28 +13,44 @@
 - timeline;
 - связь intent и фактических событий;
 - restructuring observations;
-- выявление и подтверждение правил.
+- подтверждение правил.
 
 Recorder остаётся permanently read-only.
 
-## Этап 1B — Domain Model + Base Grid Mechanics
+## Этап 1B — Manual Grid Domain + Sizing
 
-Формализовать:
-- Grid;
-- GridRevision;
+Формализовать и реализовать:
+- Grid / GridRevision;
 - GridOrderConfig;
-- ExchangeOrder;
-- Execution;
-- StrategyLot;
-- TPStep;
+- Entry input PRICE | PERCENT;
+- per-order Martingale multiplier;
+- cumulative Martingale chain;
+- automatic future qty from side budget;
+- factual used capital accounting;
+- remaining_entry_qty;
 - Active Order Window;
-- lifecycle/state machines;
-- partial fill semantics;
-- TP mechanics.
+- StrategyLot / partial fill semantics;
+- TP mechanics;
+- Bybit instrument normalization.
 
-Без real write execution.
+Generated Grid остаётся optional constructor и не блокирует этот этап.
 
-## Этап 1C — Execution Engine Core
+## Этап 1C — Manual Volume Restructuring
+
+Реализовать сначала в shadow/read-only режиме:
+
+- `RECALCULATE_ORDER`;
+- `RECALCULATE_GRID`;
+- добавление новых уровней в существующую сетку;
+- пересчёт только future/pending qty;
+- immutable factual fills;
+- before/after audit;
+- новая Grid Revision;
+- validation against current side budget and Bybit limits.
+
+Автоматические triggers на этом этапе не нужны.
+
+## Этап 1D — Execution Engine Core
 
 Сделать детерминированный исполнительный слой:
 - ApprovedExecutionPlan;
@@ -42,28 +60,28 @@ Recorder остаётся permanently read-only.
 - audit;
 - reconciliation;
 - restart recovery;
-- paper/shadow mode.
+- paper/testnet-first;
+- Active Order Window runtime.
 
-## Этап 1D — Restructuring Research
+## Этап 1E — Restructuring Research
 
-Параллельно:
-- capture ручных реструктуризаций;
-- Capital Recalculation;
-- Volume Recovery;
-- Grid Restructuring;
-- compound logic;
-- allocation;
-- триггеры rebase;
-- RestructuringPlan.
-
-На этом этапе правила исследуются, но не исполняются автономно.
+Параллельно исследовать только неподтверждённую автоматику:
+- automatic triggers;
+- recovery после разгрузки;
+- reinvestment triggers;
+- rebase/trailing policy;
+- exact production capital_base;
+- automatic allocation changes.
 
 ## Этап 2 — Simulation / Shadow / Testnet
 
-- воспроизводить Base Grid;
-- проигрывать RestructuringPlan без реального риска;
-- сравнивать решения с трейдером;
-- учитывать fees/funding/slippage/partial fills;
+- воспроизводить Manual Grid;
+- проверять per-order sizing;
+- проигрывать `RECALCULATE_ORDER` и `RECALCULATE_GRID`;
+- проверять partial fills;
+- добавлять новые levels во время cycle;
+- сравнивать планы с действиями трейдера;
+- учитывать fees/funding/slippage;
 - проверять restart/reconciliation.
 
 ## Этап 3 — Risk Manager
@@ -73,7 +91,7 @@ Recorder остаётся permanently read-only.
 - MODIFY;
 - DENY;
 - capital/margin/exposure limits;
-- margin reserve;
+- reserve;
 - safety states.
 
 ## Этап 4 — Controlled Real Execution
@@ -82,15 +100,16 @@ Recorder остаётся permanently read-only.
 - production write-enabled key;
 - hard limits;
 - emergency controls;
-- ограниченный rollout;
+- limited rollout;
 - обязательный audit/reconciliation.
 
 ## Этап 5 — Controlled Autonomous Strategy Decisions
 
 Только после подтверждения и тестирования:
-- автоматические restructuring triggers;
-- automatic capital recalculation;
+- automatic restructuring triggers;
+- automatic reinvest;
 - volume recovery rules;
+- automatic rebase/trailing;
 - automatic Grid revisions.
 
 Неизвестные правила нельзя заполнять предположениями.
