@@ -2,11 +2,11 @@
 
 **Статус: ПОДТВЕРЖДЁННАЯ МЕХАНИКА**
 
-Этот алгоритм отвечает только на вопрос:
+Этот алгоритм отвечает на вопрос:
 
-> Как механически исполнить уже заданную трейдером сетку?
+> Как механически подготовить и исполнять уже заданную трейдером Manual Grid?
 
-Он не решает, когда реструктурировать стратегию и какой новый капитал выделять.
+Он не принимает автономных торговых решений и не выбирает рынок/направление.
 
 ## Базовый поток
 
@@ -15,55 +15,88 @@
 ↓
 Зафиксировать текущую Mark Price
 ↓
-Построить логическую Long Grid / Short Grid
+Трейдер задаёт Long / Short Manual Grid Geometry
 ↓
 Для каждого Grid Order задать:
-- процентный отступ
-- configured_qty
+- Entry Price или % spacing
+- per-order Martingale multiplier
 - TP Steps
 ↓
-Активировать заданное окно лимитных ордеров
+Получить свежий factual account state
 ↓
-Отправить активные ExchangeOrders на Bybit
+Рассчитать Side Budget из allocation
+↓
+Вычесть factual used capital и locked future capital
+↓
+Рассчитать cumulative Martingale weights
+↓
+Распределить Available Future Budget
+↓
+Рассчитать configured_qty / remaining_entry_qty
+↓
+Проверить Bybit instrument limits
+↓
+Активировать заданное Active Order Window
+↓
+Execution Engine размещает только active Entry Orders
 ↓
 Получать Execution / Fill
 ↓
 После первого fill:
-- создать/обновить Filled Allocation / StrategyLot
-- пересчитать filled_qty
+- создать/обновить StrategyLot
+- обновить filled_qty
 - пересчитать actual average entry
-- синхронизировать TP на фактически исполненный объём
+- синхронизировать TP на factual open qty
 ↓
 По мере исполнения уровней
-активировать следующие Grid Orders
+активировать следующие queued Grid Orders
 ↓
-При TP / manual close
-обновлять open_qty / closed_qty / realized PnL
+По ручной команде трейдера:
+- RECALCULATE_ORDER
+или
+- RECALCULATE_GRID
 ↓
-Продолжать исполнение текущей Grid Revision
+Создать новую Grid Revision только для future intent
 ```
 
 ## Что относится к этому алгоритму
 
-- расчёт уровней уже заданной сетки;
+- Manual Grid Geometry;
+- price / percentage input;
+- automatic future sizing;
+- per-order Martingale chain;
+- factual used capital accounting;
 - Active Order Window;
-- связь GridOrderConfig → ExchangeOrder → Execution;
-- расчёт фактически исполненного объёма;
-- фактическая средняя цена;
-- лимитные TP;
-- поддержание активного окна;
+- GridOrderConfig → ExchangeOrder → Execution;
+- partial fill semantics;
+- StrategyLot accounting;
+- TP от factual volume;
+- ручной перерасчёт одного ордера;
+- ручной перерасчёт всей future grid;
 - механическое применение текущей Grid Revision.
+
+## RECALCULATE_ORDER
+
+Точечный перерасчёт меняет только future qty выбранного уровня.
+
+Остальные уровни остаются без автоматического каскадного изменения. Backend обязан проверить, что выбранный новый target помещается в доступный future budget.
+
+## RECALCULATE_GRID
+
+Полный перерасчёт стороны использует свежий factual state и заново распределяет весь eligible future budget по cumulative per-order Martingale weights.
+
+Factual fills и factual open position не изменяются.
 
 ## Что сюда не относится
 
-- решение о реструктуризации;
-- compound capital recalculation;
-- выбор нового sizing;
-- перераспределение Long/Short;
-- выбор новой reference price при rebase;
-- риск-лимиты;
-- ручное вмешательство через внешний терминал;
-- reconciliation и audit infrastructure.
+- automatic restructuring triggers;
+- autonomous capital allocation changes;
+- automatic recovery;
+- automatic reinvest decisions;
+- полный rebase/trailing decision;
+- risk limits;
+- рыночные прогнозы;
+- external signals.
 
 Реструктуризация описана отдельно: [Алгоритм реструктуризации](restructuring-algorithm.md).
 
