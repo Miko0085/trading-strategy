@@ -1,36 +1,56 @@
 # Открытые вопросы
 
-**Статус: ОТКРЫТЫЙ ВОПРОС**
+**Статус: ОТКРЫТЫЕ ВОПРОСЫ ПО НЕПОДТВЕРЖДЁННОЙ АВТОМАТИКЕ И CAPITAL SEMANTICS**
+
+Подтверждённые правила Manual Grid, per-order Martingale и ручного volume restructuring отсюда удалены. Здесь остаются только реально нерешённые вопросы.
 
 ## Base Grid / Execution
 
 1. Как синхронизировать TP при новых partial fills одного Entry Grid Order: amend существующих TP или создавать дополнительные?
-2. Можно ли менять configured_qty входного Grid Order после первого fill?
+2. Когда именно partial-filled Entry должен освобождать слот Active Order Window: после первого fill, полного fill или по отдельному правилу?
+3. Какая runtime-политика нужна для cancel/amend оставшейся части partial-filled Entry после restructuring?
 
-## Restructuring Algorithm
+## Capital Base
 
-3. Что именно является trigger реструктуризации?
-4. Что входит в capital_base перед новым перерасчётом?
-5. Как формально работает compound allocation?
-6. Как задаётся margin reserve?
-7. Какой объём восстанавливать после прибыльной разгрузки: тот же coin qty или объём на весь освобождённый капитал?
-8. На каком расстоянии/условии выставлять recovery order?
-9. Когда оставить существующие pending orders, а когда перестроить их?
-10. Когда происходит полный rebase на новую Mark Price?
-11. Когда текущая Grid Revision продолжается, а когда начинается новый Grid cycle?
-12. Как учитывать realized PnL?
-13. Использовать ли unrealized PnL в capital_base?
-14. Как формально задаётся Long / Short capital allocation?
+4. Какое точное factual поле/формула является production `capital_base`?
+5. Как исключить двойной учёт realized/unrealized PnL при расчёте Effective Side Budget?
+6. Как формально применяется reserve при разных режимах cross margin?
+7. Какие factual margin fields являются authoritative для уже использованного капитала на конкретном типе Bybit account?
 
-## Strategy Capital
+## Automatic Restructuring
 
-15. Какой минимальный капитал стратегии нужен для запуска одной монеты сверх биржевого minOrderQty/minNotionalValue?
+8. Какие события должны автоматически запускать `RECALCULATE_ORDER` или `RECALCULATE_GRID`?
+9. Нужен ли cooldown/debounce между автоматическими перерасчётами?
+10. Какие изменения allocation могут происходить автоматически, если вообще могут?
+11. Когда нужен полный rebase geometry на новую reference price?
+12. Когда начинается новый Grid Cycle вместо новой revision текущего cycle?
 
-## Future Risk Manager
+## Reinvestment / Recovery
 
-16. Какие margin/equity/exposure limits использовать?
-17. Какой минимальный margin reserve обязателен?
-18. Когда Risk Manager должен ALLOW / MODIFY / DENY?
-19. Какие emergency actions разрешены?
+13. Какая доля realized profit автоматически добавляется к будущему budget?
+14. Должен ли unrealized PnL участвовать в production sizing, и если да — по какой подтверждённой формуле?
+15. Какой объём восстанавливать после прибыльной разгрузки?
+16. На каком уровне/условии создавать recovery order?
+17. Recovery должен быть отдельным ордером или частью общего `RECALCULATE_GRID`?
+
+## Trailing
+
+18. Какой trigger двигает pending geometry?
+19. Trailing работает непрерывно или дискретными шагами?
+20. Что делать с вручную зафиксированными Entry/TP fields при trailing?
+
+## Strategy Capital / Risk
+
+21. Какой минимальный рабочий капитал нужен для запуска конкретной сетки сверх биржевых минимумов?
+22. Какие margin/equity/exposure limits должен применять Risk Manager?
+23. Какой минимальный reserve обязателен?
+24. Какие emergency actions разрешены Risk Manager?
+25. Когда Risk Manager должен ALLOW / MODIFY / DENY?
+
+## Bybit semantics, которые нужно проверить фактически
+
+26. Семантика `execPnl` и fees для расчёта net realized PnL.
+27. Точное поведение position/account fields для используемого account mode.
+28. Поведение amend/cancel/replace при частично исполненном Entry в будущей write-интеграции.
 
 Эти вопросы нельзя заполнять предположениями.
