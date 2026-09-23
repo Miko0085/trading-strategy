@@ -1,6 +1,6 @@
 # Модель данных
 
-**Статус: RECORDER РЕАЛИЗОВАН / STRATEGY И EXECUTION MODEL ПРОЕКТИРУЮТСЯ**
+**Статус: RECORDER РЕАЛИЗОВАН / MANUAL GRID INTENT И RESTRUCTURING MODEL ФОРМАЛИЗУЮТСЯ**
 
 ## 1. Recorder — фактическая реальность
 
@@ -16,26 +16,92 @@ Recorder хранит machine truth:
 - trader_notes;
 - tracked_instruments.
 
-## 2. Strategy Intent Model — что хотели сделать
+Recorder остаётся read-only и не является operational DB будущего Execution Engine.
 
-Будущие сущности:
+## 2. Strategy Intent Model
 
 ### Grid
+
 Долгоживущая Long или Short сетка.
 
 ### GridRevision
-Immutable-версия параметров Grid.
+
+Immutable-версия текущего intent.
+
+Должна содержать:
+- reference market snapshot;
+- allocation;
+- active order count;
+- GridOrderConfig;
+- TP configs;
+- sizing/restructuring metadata;
+- before/after context.
 
 ### GridOrderConfig
-Логическая настройка конкретного уровня.
+
+Минимально:
+
+```text
+id
+side
+level
+entry_input_mode: PRICE | PERCENT
+entry_price
+entry_offset_pct
+martingale_multiplier
+configured_qty
+filled_qty
+remaining_entry_qty
+tp_steps
+source
+sizing_source
+revision_id
+```
+
+В Manual Grid geometry задаёт трейдер, а future qty рассчитывает sizing layer.
 
 ### TPStepConfig
-Намерение по разгрузке конкретного исполненного объёма.
+
+Намерение по разгрузке factual StrategyLot.
+
+## 3. Restructuring Model
 
 ### RestructuringPlan
-Предложение Decision Layer о том, как изменить текущую Grid. Оно ещё не означает, что действия разрешены и исполнены.
 
-## 3. Risk Decision Model
+Предложение изменить только future intent.
+
+Минимально:
+
+```text
+id
+scope: ORDER | GRID
+side
+target_order_id?
+source_revision_id
+state_snapshot_id
+effective_side_budget
+factual_used_capital
+locked_future_capital
+available_future_budget
+orders_before
+orders_after
+reason
+validation_state
+target_revision_id
+```
+
+Подтверждены два manual operation type:
+
+```text
+RECALCULATE_ORDER
+RECALCULATE_GRID
+```
+
+### RestructuringEvent
+
+Audit-факт создания/применения restructuring plan.
+
+## 4. Risk Decision Model
 
 ```text
 RiskDecision
@@ -48,29 +114,36 @@ RiskDecision
 
 Точная схема будет определена позже.
 
-## 4. Execution Model — что отправили на биржу
+## 5. Execution Model
 
 ### ApprovedExecutionPlan
+
 Утверждённый набор команд после Risk Manager.
 
 ### ExecutionCommand
-Отдельная идемпотентная команда: PLACE / AMEND / CANCEL / разрешённый CLOSE.
+
+Идемпотентная команда:
+- PLACE;
+- AMEND;
+- CANCEL;
+- разрешённый CLOSE.
 
 ### ExchangeOrder
+
 Реальный order на Bybit.
 
 ### Execution / Fill
-Фактическое исполнение.
 
-## 5. Position Attribution Model
+Фактическое исполнение. Это ground truth.
+
+## 6. Position Attribution Model
 
 ### StrategyLot / Filled Allocation
 
-Появляется после первого фактического fill конкретного Grid Order и хранит:
+Появляется после первого factual fill конкретного Grid Order и хранит:
 - source GridOrderConfig;
 - linked ExchangeOrders;
 - executions;
-- configured_qty;
 - filled_qty;
 - actual average entry;
 - open_qty;
@@ -78,14 +151,34 @@ RiskDecision
 - realized PnL;
 - TP state.
 
-### RestructuringEvent
-Audit/research факт реструктуризации и её результата.
+Factual StrategyLot не должен пересчитываться при volume restructuring будущих ордеров.
 
-## Главная цепочка
+## 7. Capital / Sizing Snapshot
+
+Для воспроизводимости расчёта нужна отдельная сущность/snapshot, содержащая factual inputs конкретного sizing event:
+
+```text
+capital_base / factual account fields
+long allocation
+short allocation
+reserve
+factual used capital per side
+locked future capital
+available future budget
+leverage
+instrument limits
+```
+
+Точная production-формула `capital_base` остаётся отдельным подтверждаемым правилом.
+
+## 8. Главная цепочка
 
 ```text
 INTENT
-GridRevision / GridOrderConfig / RestructuringPlan
+GridRevision / GridOrderConfig
+        ↓
+SIZING / RESTRUCTURING
+RestructuringPlan
         ↓
 RISK DECISION
 ALLOW / MODIFY / DENY
@@ -100,4 +193,4 @@ ATTRIBUTED RESULT
 StrategyLot / PnL / Account State
 ```
 
-Эти уровни нельзя схлопывать в одну таблицу или одну сущность.
+Эти уровни нельзя схлопывать в одну сущность или считать planned qty фактическим исполнением.
