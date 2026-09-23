@@ -1,5 +1,20 @@
 # История изменений документации
 
+## 2026-09-23 — Manual Grid становится основным workflow
+
+- Generated Grid переведён в дополнительный/legacy constructor и больше не считается основным способом работы трейдера.
+- Основной workflow теперь: Manual Grid Geometry → Capital Allocation → Per-Order Martingale → Automatic Future Qty → Active Order Window → Manual Volume Restructuring.
+- Для Manual Grid подтверждён ввод уровня как абсолютной Entry Price либо процентного spacing.
+- Подтверждён per-order Martingale: каждый multiplier умножает вес предыдущего уровня.
+- Глобальный `M^i` сохранён только для optional Generated Grid.
+- Подтверждено, что qty Manual Grid рассчитывает система из бюджета стороны, leverage, цены уровня и Bybit instrument limits.
+- Factual fills закреплены как immutable; перераспределяться может только `remaining_entry_qty`.
+- Подтверждены два manual restructuring scope: `RECALCULATE_ORDER` и `RECALCULATE_GRID`.
+- Добавление нового Grid Order может сопровождаться расчётом только нового уровня либо перераспределением всей future grid.
+- Обновлены Strategy Overview, Grid Mechanics, Current Algorithm, Restructuring Algorithm, Order Model, Data Model, Confirmed Rules, Open Questions, Roadmap и журнал решений.
+- Полностью переписан `prototype/manual-grid-ui/IMPLEMENTATION_PROMPT.md` под новую механику.
+- Обновлён README Manual Grid UI с явным разделением текущего кода и целевой подтверждённой модели.
+
 ## 2026-09-19 — архитектурная реорганизация
 
 - Разделены Strategy Decision, Risk Manager, Execution Engine и Recorder.
@@ -13,19 +28,13 @@
 - Data Model расширен RestructuringPlan, RiskDecision, ApprovedExecutionPlan и ExecutionCommand.
 - Roadmap разделён на Domain Model, Execution Core, Restructuring Research, Risk Manager и Controlled Automation.
 
-
 ## 2026-09-19 — уточнение механики после разговора с трейдером
 
-- Исправлена прежняя интерпретация partial fill: TP теперь считается от фактически исполненного объёма filled_qty, а не обязательно ждёт полного configured_qty.
-- Зафиксировано, что несколько fills одного Grid Order остаются одной логической единицей стратегии.
-- Подтверждено: обычный Take Profit выставляется заранее реальными лимитными заявками на Bybit.
-- Подтверждено: Market-закрытие не является базовым способом TP.
-- Зафиксирован текущий базовый интерфейс расчёта сетки через индивидуальные процентные отступы.
-- Подтверждено: первая цена считается от Mark Price в момент запуска стратегии.
-- Добавлена механика настраиваемого активного окна: на Bybit постоянно поддерживается заданное число активных лимитных Grid Orders, а следующие уровни хранятся внутри платформы.
-- Добавлена гипотеза будущей реструктуризации: повторное размещение разгруженного объёма на более выгодных уровнях для улучшения средней цены.
-- Добавлена гипотеза использования общего доступного баланса и PnL как будущего входа для реструктуризации.
-- Сокращён список открытых вопросов до действительно неясных технических и математических мест.
+- Исправлена прежняя интерпретация partial fill: TP считается от factual `filled_qty`.
+- Зафиксировано, что несколько fills одного Grid Order остаются одной логической единицей.
+- Подтверждено: обычный Take Profit является limit order.
+- Подтверждён Active Order Window.
+- Зафиксирована первая версия manual percentage spacing; 2026-09-23 она расширена режимом absolute price.
 
 ## 2026-09-19 — русификация
 
@@ -35,7 +44,6 @@
 - Добавлено разделение GridOrderState / StrategyLotState / TPStepState.
 - Добавлена обязательная история Grid Revision.
 - Добавлена политика реакции на ручное вмешательство через терминал Bybit.
-- Убрана лишняя привязка публичной документации к одному конкретному активу и короткому периоду наблюдений.
 
 ## 2026-09-18
 
