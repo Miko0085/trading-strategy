@@ -1,116 +1,157 @@
 # Алгоритм реструктуризации сетки
 
-**Статус: В РАЗРАБОТКЕ / КЛЮЧЕВАЯ НЕФОРМАЛИЗОВАННАЯ ЧАСТЬ СТРАТЕГИИ**
+**Статус: MANUAL VOLUME RESTRUCTURING CONFIRMED / AUTOMATIC TRIGGERS OPEN**
 
-Реструктуризация — это отдельный decision layer. Она не исполняет ордера сама и не заменяет Risk Manager.
+Реструктуризация — отдельный planning layer. Она не должна напрямую отправлять команды на Bybit.
 
-Её задача: на основании текущего состояния стратегии сформировать новый план того, как изменить рабочую сетку.
+На текущем этапе подтверждена ручная реструктуризация объёма, запускаемая трейдером из интерфейса.
 
-## Входы реструктуризации
-
-Потенциально используются только внутренние объективные данные стратегии и аккаунта:
-- текущая Mark Price;
-- Long / Short size;
-- Strategy Lots;
-- average entry;
-- realized PnL;
-- unrealized PnL;
-- balance / equity;
-- available balance / available margin;
-- текущие Grid Revisions;
-- pending Grid Orders;
-- уже выполненные TP / разгрузки;
-- текущие allocations капитала.
-
-Внешние новости, sentiment и технические индикаторы не используются.
-
-## Три логических блока
-
-### 1. Capital Recalculation — перерасчёт капитала
-
-Задача блока:
-- определить актуальную капиталовую базу;
-- применить правила allocation;
-- определить рабочий капитал Long / Short;
-- сохранить резерв поддерживающей маржи;
-- учесть compound growth там, где правило подтверждено.
-
-**Объяснение трейдера:** прибыль должна реинвестироваться по принципу сложного процента при следующем перерасчёте стратегии.
-
-Пример из объяснения трейдера:
+## Главный invariant
 
 ```text
-capital_before = 1000
-Long allocation = 40%
-
-после торговли capital_base = 1100
-
-новый Long budget
-= 40% от новой капиталовой базы
+Factual filled/open volume → immutable
+Future/pending volume      → может пересчитываться
 ```
 
-Проценты из конкретного разговора не считаются универсальной константой для всех конфигураций, пока полная формула allocation не утверждена.
+Нельзя уменьшать или перераспределять уже исполненный объём так, будто сделки не было.
 
-Открыто:
-- что именно входит в capital_base;
-- входит ли unrealized PnL;
-- когда происходит capital recalculation;
-- как формально задаётся margin reserve.
+## Входы
 
-### 2. Volume Recovery — восстановление разгруженного объёма
+Используются только объективные данные стратегии и аккаунта:
+- current Mark Price;
+- Long / Short factual position;
+- StrategyLots;
+- filled_qty / open_qty;
+- average fill;
+- available margin / capital snapshot;
+- current allocation;
+- pending Grid Orders;
+- per-order Martingale multipliers;
+- leverage;
+- Bybit instrument limits;
+- current Grid Revision.
 
-**Объяснение трейдера / текущая ручная практика:** после прибыльной разгрузки проданный объём должен иметь возможность быть восстановлен по более выгодной цене.
+Внешние новости, sentiment, индикаторы и прогнозы не используются.
 
-Для Long — дешевле цены продажи. Для Short — зеркально.
+## Подтверждённые manual triggers
 
-Открыто:
-- восстанавливается тот же coin qty или больший;
-- используется ли весь высвобождённый notional;
-- используется ли realized profit дополнительно;
-- какая цена/отступ является trigger для recovery.
+### 1. RECALCULATE_ORDER
 
-### 3. Grid Restructuring — перестройка оставшейся сетки
+Трейдер выбирает конкретный Grid Order и запускает перерасчёт его future qty.
 
-Это главный пока неформализованный decision point.
+Правила:
+- factual `filled_qty` не меняется;
+- `open_qty` не меняется этим действием;
+- остальные уровни не должны автоматически пересчитываться;
+- новый remaining qty должен помещаться в доступный future budget;
+- применяются актуальные leverage и instrument limits;
+- результат создаёт новую Grid Revision.
 
-Нужно решить:
-- оставить существующие pending orders;
-- добавить recovery order;
-- изменить часть pending orders;
-- полностью пересчитать оставшуюся Grid;
-- сделать rebase и начать новую Grid Revision.
+Это точечный перерасчёт, а не каскадирование Martingale chain по всей сетке.
 
-Точная формула этого решения пока не определена.
+### 2. RECALCULATE_GRID
 
-## Выход алгоритма: RestructuringPlan
+Трейдер запускает перерасчёт всей future части Long или Short.
 
-Реструктуризация не должна напрямую отправлять команды на Bybit.
+Поток:
+
+```text
+Fresh factual account state
+↓
+Current Side Budget
+↓
+Subtract Factual Used Capital
+↓
+Subtract Locked Future Capital
+↓
+Available Future Budget
+↓
+Build cumulative per-order Martingale weights
+↓
+Normalize weights across eligible pending levels
+↓
+Recalculate remaining_entry_qty
+↓
+Validate Bybit limits
+↓
+RestructuringPlan
+↓
+Grid Revision
+```
+
+## Per-Order Martingale Chain
+
+Для всей сетки веса считаются последовательно:
+
+```text
+w1 = 1
+w2 = w1 × M2
+w3 = w2 × M3
+...
+wn = w(n-1) × Mn
+```
+
+После этого веса eligible future levels нормализуются на доступный future budget.
+
+Изменение `M` одного уровня влияет на него и потенциально на последующие веса только при `RECALCULATE_GRID`.
+
+При `RECALCULATE_ORDER` изменения не должны автоматически каскадировать на остальные уровни.
+
+## Добавление новых уровней
+
+Если трейдер добавил новый ордер в существующую сетку, доступны два действия:
+
+```text
+Calculate only this new order
+или
+Recalculate entire future grid
+```
+
+Второй вариант включает новый уровень в общую Martingale chain и перераспределяет eligible future budget.
+
+## Factual Used Capital
+
+До перераспределения система должна учесть капитал, уже занятый фактически открытым объёмом стратегии.
+
+Концептуально:
+
+```text
+AvailableFutureBudget
+= EffectiveSideBudget
+- FactualUsedCapital
+- LockedFutureCapital
+```
+
+Точная production-семантика `EffectiveSideBudget`/`capital_base` должна быть подтверждена отдельно, чтобы не допустить двойного учёта equity/PnL.
+
+## Выход: RestructuringPlan
+
+Минимально:
 
 ```text
 RestructuringPlan
-- state_snapshot_id
+- scope: ORDER | GRID
+- target_order_id?
+- side
+- source_revision
+- factual_state_snapshot
+- effective_side_budget
+- factual_used_capital
+- locked_future_capital
+- available_future_budget
+- orders_before
+- orders_after
+- validation
 - reason
-- capital_base
-- allocation_snapshot
-- volume_recovery_actions
-- orders_to_keep
-- orders_to_cancel
-- orders_to_amend
-- orders_to_create
-- proposed_spacing
-- proposed_qty
-- proposed_reference_price
 - target_grid_revision
 ```
-
-Это концептуальная структура, не финальная схема БД.
 
 ## Дальнейший pipeline
 
 ```text
 Current State
 ↓
-Restructuring Algorithm
+Manual Restructuring Request
 ↓
 RestructuringPlan
 ↓
@@ -118,49 +159,33 @@ Risk Manager
 ↓
 ALLOW / MODIFY / DENY
 ↓
-Approved Execution Plan
+ApprovedExecutionPlan
 ↓
 Execution Engine
 ↓
 Bybit
 ```
 
-## Что уже подтверждено как концепция
+В shadow/read-only MVP результат остаётся virtual и не отправляется на биржу.
 
-- сетка не обязана быть статичной;
-- после разгрузки объём может быть повторно использован;
-- прибыль должна участвовать в будущих перерасчётах по принципу compound growth;
-- реструктуризация должна учитывать состояние аккаунта;
-- pending orders могут быть сохранены, изменены или заменены;
-- результат реструктуризации должен создавать новую Grid Revision;
-- все решения и фактические действия должны быть сопоставимы с Recorder.
+## Что подтверждено
 
-## Что пока нельзя автоматизировать
+- ручной перерасчёт одного future order;
+- ручной перерасчёт всей future grid;
+- factual fills immutable;
+- future qty может изменяться;
+- добавление новых уровней может сопровождаться перерасчётом;
+- per-order Martingale chain используется при полном перерасчёте;
+- restructuring создаёт новую Grid Revision;
+- geometry не должна автоматически меняться только из-за sizing recalculation.
 
-- trigger реструктуризации;
-- новый sizing;
-- новый spacing;
-- момент rebase;
-- долю realized PnL для повторного использования;
-- использование unrealized PnL как капитала;
-- изменение Long / Short allocation;
-- risk limits.
+## Что остаётся OPEN
 
-## Основные открытые вопросы
-
-1. Что является trigger реструктуризации?
-2. Что именно входит в новую capital base?
-3. Как формально работает compound allocation?
-4. Какой объём восстанавливать после разгрузки?
-5. На каком расстоянии восстанавливать проданный объём?
-6. Когда оставить старые pending orders, а когда заменить?
-7. Как меняется spacing?
-8. Как меняется sizing?
-9. Когда использовать новую Mark Price?
-10. Когда начинается новый Grid cycle?
-11. Как учитывать Long / Short imbalance?
-12. Какие ограничения должен наложить Risk Manager?
-
-## Исследовательские данные
-
-Какие данные нужно собирать для reverse engineering реструктуризации вынесено отдельно в [Наблюдения по реструктуризации](../05-research/restructuring-observations.md).
+- automatic restructuring triggers;
+- automatic reinvest triggers;
+- automatic volume recovery после TP;
+- точная production-формула capital_base;
+- автоматический rebase;
+- trailing trigger policy;
+- autonomous decision rules;
+- Risk Manager limits.
