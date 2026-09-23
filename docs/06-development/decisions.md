@@ -1,116 +1,161 @@
 # Журнал решений
 
+Новая прямая формулировка трейдера имеет приоритет над прежней интерпретацией. Если решение заменено, старое правило сохраняется в истории со статусом `SUPERSEDED`.
+
 ## 2026-09-18 — Внешние сигналы не используются
+
+**STATUS: CONFIRMED**
 
 Стратегия не использует новости, sentiment, технические индикаторы, прогнозы аналитиков или AI price prediction.
 
-## 2026-09-18 — Объём задаётся в монетах
+## 2026-09-18 — Recorder permanently read-only
 
-configured_qty — целевой объём конкретного Grid Order.
+**STATUS: CONFIRMED**
 
-## 2026-09-18 — Recorder навсегда остаётся read-only
-
-Никакие write/trading методы не добавляются в src/recorder/.
-
-## 2026-09-18 — Execution Engine является отдельным компонентом
-
-У него отдельные права, API key, состояние и safety controls.
+Write/trading методы не добавляются в `src/recorder/`. Execution Engine является отдельным компонентом с отдельными credentials и safety controls.
 
 ## 2026-09-19 — Grid Orders являются лимитными ордерами
 
-Базовая стратегия использует лимитные заявки для входа и обычного Take Profit.
+**STATUS: CONFIRMED**
 
-## 2026-09-19 — Первый уровень считается от Mark Price в момент запуска
+Entry Grid Orders и обычный TP используют лимитные заявки.
 
-Первый Long-уровень находится ниже текущей Mark Price, первый Short-уровень — выше.
+## 2026-09-19 — Первый Entry привязан к Mark Price
 
-## 2026-09-19 — Следующие уровни задаются индивидуальными процентными отступами
+**STATUS: CONFIRMED**
 
-Каждый Grid Order может иметь свой процент от предыдущего лимитного уровня.
+Long #1 ниже Mark Price, Short #1 выше.
 
-## 2026-09-19 — Процентный режим является базовым интерфейсом цены
+## 2026-09-19 — Percentage-only manual price mode
 
-Ручной ввод абсолютной цены как отдельный режим на первом этапе не нужен.
+**STATUS: SUPERSEDED 2026-09-23**
+
+Ранее считалось, что отдельный ввод абсолютной Entry Price не нужен. Новое решение разрешает Manual Grid задавать как ценой, так и процентным расстоянием.
 
 ## 2026-09-19 — Один Grid Order может иметь несколько fills
 
-Частичные executions не создают новые логические Grid Orders.
+**STATUS: CONFIRMED**
 
-## 2026-09-19 — TP рассчитывается от фактически исполненного объёма
+Partial executions не создают новые логические Grid Orders.
 
-Если исполнена только часть configured_qty, процент разгрузки считается от текущего filled_qty.
+## 2026-09-19 — TP считается от factual filled volume
 
-Это решение заменяет прежнюю формулировку, где TP жёстко считался от configured_qty и ждал полного fill.
+**STATUS: CONFIRMED**
 
-## 2026-09-19 — TP выставляется реальными лимитными заявками
-
-После появления фактически исполненного объёма система должна поставить соответствующие limit TP orders на Bybit. Market для обычного TP не используется.
-
-## 2026-09-19 — Активное окно Grid Orders настраивается
-
-Полная сетка хранится внутри платформы, а на Bybit постоянно поддерживается заданное количество активных лимитных уровней. По мере исполнения система выставляет следующие.
-
-## 2026-09-19 — Каждый Grid Order является отдельной настраиваемой единицей
-
-Будущие TP и другие разрешённые параметры можно перенастраивать через интерфейс в реальном времени.
-
-## 2026-09-19 — История изменений сетки обязательна
-
-Каждая существенная правка создаёт новую Grid Revision для связи намерения трейдера с фактическими событиями Recorder.
-
-## 2026-09-19 — Ручное вмешательство через Bybit требует подтверждения
-
-Если Bybit отличается от ожидаемой конфигурации, система уведомляет трейдера и не перестраивает стратегию автоматически.
-
-## Правило ведения знаний
-
-Новая прямая формулировка трейдера имеет приоритет над нашей предыдущей интерпретацией. Если новое подтверждение меняет старое правило, старое правило должно быть явно заменено, а не сохраняться как одновременно действующее.
-
-
-## 2026-09-19 — Decision, Risk, Execution и Recorder разделены архитектурно
-
-Decision Layer определяет proposed action. Risk Manager разрешает, ограничивает или запрещает его. Execution Engine только исполняет утверждённый план. Recorder независимо фиксирует фактическую реальность.
-
-## 2026-09-19 — StrategyLot / Filled Allocation появляется после первого fill
-
-Это решение заменяет старую модель «Strategy Lot только после полного configured_qty». Причина: TP уже рассчитывается и выставляется на фактически исполненный объём.
+TP не ждёт полного configured_qty и строится от фактически исполненного объёма и factual average fill.
 
 ## 2026-09-19 — Active Order Window является execution policy
 
-Он вынесен из State Machine. State machines описывают состояния сущностей; Active Order Window определяет, какие GridOrderConfig активировать на Bybit.
+**STATUS: CONFIRMED**
 
-## 2026-09-19 — Restructuring Algorithm формирует RestructuringPlan
+Полная логическая сетка может быть больше числа ExchangeOrders, одновременно находящихся на Bybit.
 
-Он не должен напрямую отправлять команды на Bybit. Перед исполнением plan проходит Risk Manager и превращается в ApprovedExecutionPlan.
+## 2026-09-19 — Grid Revision обязательна
 
-## 2026-09-19 — Compound growth относится к реструктуризации капитала
+**STATUS: CONFIRMED**
 
-По объяснению трейдера реализованная прибыль должна участвовать в будущих перерасчётах. Точная формула capital_base, allocation и margin reserve остаётся открытой.
+Существенные изменения intent должны сохраняться как immutable revision с before/after audit.
 
+## 2026-09-19 — Decision, Risk, Execution и Recorder разделены
 
-## 2026-09-22 — Generated Grid использует normalized power distribution
+**STATUS: CONFIRMED**
 
-Для автоматической генерации уровней зафиксирована подтверждённая формула:
+Decision/Planning формирует proposed action; Risk Manager проверяет; Execution Engine исполняет; Recorder фиксирует factual reality.
+
+## 2026-09-19 — StrategyLot появляется после первого fill
+
+**STATUS: CONFIRMED**
+
+Factual attribution начинается после первого исполнения, а не после полного заполнения Entry.
+
+## 2026-09-22 — Generated Grid normalized power distribution
+
+**STATUS: CONFIRMED FOR OPTIONAL GENERATED GRID**
+
+Формула:
 
 ```text
-P_i = P₁ - (P₁ - Pₙ) × ((i - 1) / (N - 1))^K
+P_i = P1 - (P1 - PN) × ((i - 1)/(N - 1))^K
 ```
 
-Это тот же тип расчёта, который ранее использовался в восстановленной Excel-модели Veles: первый уровень, последний уровень, количество ордеров и коэффициент распределения задают всю кривую между границами.
+остаётся подтверждённой для Generated Grid, но Generated Grid больше не является primary workflow MVP.
 
-Решение относится к Generated Grid. Manual Grid по-прежнему допускает индивидуальные offsets по уровням.
+## 2026-09-22 — Generated Grid global geometric Martingale
 
-## 2026-09-22 — Generated Grid использует normalized geometric martingale
-
-Для автоматического sizing зафиксирован `martingale_multiplier`:
+**STATUS: CONFIRMED FOR OPTIONAL GENERATED GRID / NOT PRIMARY MANUAL SIZING**
 
 ```text
 w_i = M^(i-1)
-normalized_weight_i = w_i / Σw
 ```
 
-После нормализации доступный budget стороны распределяется по весам, затем рассчитываются notional и coin quantity конкретного уровня.
+остаётся валидной формулой старого Generated Grid constructor. Она не должна применяться как основная sizing-модель Manual Grid.
 
-`M = 1.20` означает рост относительного веса следующего уровня на 20%.
+# Решения 2026-09-23
 
-Grid Geometry и Grid Sizing являются независимыми частями алгоритма: изменение martingale multiplier не должно изменять цены уровней, а изменение distribution coefficient не должно само по себе менять sizing formula.
+## Manual Grid становится основным workflow
+
+**STATUS: CONFIRMED**
+
+Трейдер вручную определяет Grid Geometry. Generated Grid сохраняется как дополнительный/legacy constructor и может быть скрыт из основного интерфейса.
+
+## Manual level можно задавать Price или Percent
+
+**STATUS: CONFIRMED**
+
+Для каждого Grid Order поддерживается intent абсолютной Entry Price либо процентного расстояния.
+
+## Qty в Manual Grid рассчитывает система
+
+**STATUS: CONFIRMED**
+
+Трейдер задаёт geometry, allocation, leverage и Martingale parameters; система рассчитывает future qty с учётом бюджета стороны и Bybit instrument limits.
+
+## Martingale является per-order multiplier
+
+**STATUS: CONFIRMED**
+
+Multiplier каждого следующего уровня умножает вес предыдущего:
+
+```text
+w1 = 1
+w2 = w1 × M2
+w3 = w2 × M3
+...
+```
+
+Это заменяет использование одного глобального `M` как основной Manual Grid sizing-модели.
+
+## Factual fills immutable
+
+**STATUS: CONFIRMED**
+
+Исполненный объём не перераспределяется. Пересчитываться может только future/pending часть.
+
+```text
+configured_qty = filled_qty + remaining_entry_qty
+```
+
+## Подтверждены два manual restructuring scope
+
+**STATUS: CONFIRMED**
+
+```text
+RECALCULATE_ORDER
+RECALCULATE_GRID
+```
+
+`RECALCULATE_ORDER` изменяет future qty выбранного уровня без автоматического каскада остальных уровней.
+
+`RECALCULATE_GRID` заново распределяет eligible future budget по всей оставшейся сетке с учётом cumulative per-order Martingale chain.
+
+## Новый Grid Order можно добавить в активную стратегию
+
+**STATUS: CONFIRMED**
+
+После добавления уровня трейдер может рассчитать только новый ордер либо перераспределить future budget всей сетки.
+
+## Manual restructuring подтверждён, automatic triggers остаются открыты
+
+**STATUS: CONFIRMED / OPEN SPLIT**
+
+Ручная кнопка перерасчёта входит в текущий MVP. Автоматические triggers, recovery, automatic reinvest и autonomous restructuring остаются исследовательскими вопросами.
