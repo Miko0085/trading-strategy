@@ -159,3 +159,50 @@ RECALCULATE_GRID
 **STATUS: CONFIRMED / OPEN SPLIT**
 
 Ручная кнопка перерасчёта входит в текущий MVP. Автоматические triggers, recovery, automatic reinvest и autonomous restructuring остаются исследовательскими вопросами.
+
+# Решения 2026-09-26
+
+## До четырёх Take Profit parts на Grid Order
+
+**STATUS: CONFIRMED**
+
+Один Grid Order / Strategy Lot использует максимум четыре TP parts (`TP1..TP4`). Доли между ними настраиваемые и не обязаны быть равными.
+
+## Приоритет реструктуризации — безопасность всей позиции
+
+**STATUS: CONFIRMED PRINCIPLE / ROUTING FORMULA OPEN**
+
+Реструктуризация должна в первую очередь защищать капитал, маржу и позиции. Реинвест не обязан возвращаться в тот же Grid Order, который заработал прибыль. Основное направление исследования — пересчёт всей eligible future Grid / позиции.
+
+## Profitable TP рассматривается как automatic restructuring trigger
+
+**STATUS: STRONGLY SUPPORTED CANDIDATE / APPLY POLICY OPEN**
+
+После прибыльного TP или profitable close необходимо обновить factual account state и future budget. Исследуется автоматический запуск restructuring calculation. Пока не решено, должен ли результат применяться автоматически или только формировать proposal для Risk Check / Manual Review.
+
+## Routing reinvestment между Long и Short остаётся открытым
+
+**STATUS: OPEN**
+
+Зафиксированы три кандидата:
+
+1. same-side: Long profit → Long future Grid, Short profit → Short future Grid;
+2. risk-priority cross-side: капитал идёт преимущественно стороне с более высоким текущим риском/потребностью;
+3. both-sides: новый капитал распределяется между обеими сторонами.
+
+Финальная формула не подтверждена. Один из исследуемых факторов для risk-priority — расстояние Mark Price до factual average Long/Short, но одной этой метрики пока недостаточно считать правило формализованным.
+
+## Биржевой minimum-lot guard является атомарным safety invariant
+
+**STATUS: CONFIRMED**
+
+Если после restructuring хотя бы один обязательный order не проходит актуальные Bybit `minOrderQty`, `qtyStep`, `minNotionalValue` или `tickSize`, новый план не применяется частично.
+
+```text
+RESTRUCTURING_PLAN_INVALID
+→ MANUAL_REVIEW
+→ NO PARTIAL APPLY
+→ NO AUTOMATIC CONTINUE
+```
+
+Execution Engine не должен самостоятельно увеличивать qty, расходовать Reserve, пропускать невалидный уровень или менять allocation/Martingale для обхода ошибки.
