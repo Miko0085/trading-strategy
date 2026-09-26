@@ -46,6 +46,7 @@
 
 * [Наблюдения трейдера](05-research/trader-observations.md)
 * [Наблюдения по реструктуризации](05-research/restructuring-observations.md)
+* [Маршрутизация реинвеста и автоматическая реструктуризация](05-research/reinvestment-routing-research.md)
 * [Гипотезы и возможные правила](05-research/candidate-rules.md)
 * [Подтверждённые правила](05-research/confirmed-rules.md)
 * [Открытые вопросы](05-research/open-questions.md)
