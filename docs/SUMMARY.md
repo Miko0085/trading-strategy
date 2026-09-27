@@ -14,6 +14,7 @@
 * [Обзор стратегии](01-strategy/strategy-overview.md)
 * [Модель Long / Short](01-strategy/long-short-model.md)
 * [Механика сетки](01-strategy/grid-mechanics.md)
+* [Мартингейл и распределение объёма](01-strategy/martingale-sizing.md)
 * [Модель ордера](01-strategy/order-model.md)
 * [Частичный Take Profit](01-strategy/partial-take-profit.md)
 * [Учёт позиции и Strategy Lot](01-strategy/position-accounting.md)
