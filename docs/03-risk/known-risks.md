@@ -1,31 +1,70 @@
 # Известные риски
 
+## Safety-first
+
+Первый приоритет стратегии — сохранить капитал, маржу и позиции. Поэтому sizing/restructuring всегда должен проходить safety validation до исполнения.
+
 ## Stop Loss
 
-**Статус: ЭКСПЕРИМЕНТАЛЬНО / ОТКРЫТЫЙ ВОПРОС**
+**Статус: OPEN**
 
 Stop Loss пока не подтверждён как обязательный элемент базовой стратегии.
 
-Рассматриваемые варианты:
-- частичный Stop Loss;
-- полный Stop Loss;
-- досрочное закрытие и повторный вход глубже;
-- отсутствие Stop Loss.
-
-Ни один вариант пока не зафиксирован как правило.
-
 ## Рост объёма по сетке
 
-Увеличение количества монет на более глубоких уровнях повышает риск быстрого расходования маржи. Точная формула увеличения объёма пока не подтверждена.
+Риск определяется не только coin qty, а распределением margin/notional по уровням.
+
+Особенно опасны:
+- слишком высокий `K` в `POWER_CURVE`;
+- слишком большие `M_i` в `PER_ORDER_M`;
+- высокая leverage;
+- небольшой reserve;
+- повторный reinvest без контроля total exposure.
+
+Поэтому sizing mode сам по себе не является risk rule. Risk Manager должен отдельно ограничивать итоговую экспозицию.
+
+## Minimum-lot / minimum-notional risk
+
+При небольшом future budget часть рассчитанных orders может оказаться ниже биржевого минимума.
+
+Нельзя допускать partial apply, когда часть новой сетки выставилась, а часть была rejected.
+
+```text
+any mandatory order invalid
+→ whole plan MANUAL_REVIEW
+```
+
+## Partial fill risk
+
+Partially-filled Entry создаёт factual position, которую нельзя считать pending intent. При restructuring filled часть immutable, future remainder может изменяться.
+
+## Reinvestment risk
+
+После прибыльного TP доступный капитал может увеличиться, но нельзя считать realized PnL автоматически равным свободной марже для нового sizing.
+
+Нужен fresh factual account snapshot и подтверждённая `capital_base` semantics.
+
+## Cross-side routing risk
+
+Неправильный автоматический перенос капитала Long↔Short может ухудшить hedge или увеличить liquidation risk. Пока routing formula не подтверждена, она остаётся research layer.
 
 ## Общий Long / Short break-even
 
-Пока нет подтверждённой формулы общей точки/зоны безубытка одновременно по Long и Short с несколькими Strategy Lots.
+Нет подтверждённой единой формулы общей зоны безубытка по всем StrategyLots и двум сторонам. Это нельзя использовать как hard risk metric до формализации.
 
-## Частичные исполнения
+## External intervention
 
-Частичное исполнение является нормальным рыночным событием. Но сценарий, когда ордер частично исполнился, а оставшийся объём потом отменён, пока не формализован.
+Ручное изменение состояния через Bybit требует reconciliation и подтверждения Adopt/Restore. Скрытая автоматическая перестройка запрещена.
 
-## Ручное вмешательство через терминал
+## Technical races
 
-Если трейдер вручную меняет состояние на Bybit вне интерфейса платформы, система не должна автоматически перестраивать стратегию. Требуется уведомление и подтверждение: принять новое состояние или восстановить прежнюю конфигурацию там, где это безопасно и технически возможно.
+Execution Engine обязан учитывать:
+- REST timeout при фактически созданном order;
+- duplicate WS/REST events;
+- out-of-order executions;
+- cancel vs fill race;
+- reconnect;
+- restart recovery;
+- stale instrument metadata.
+
+Execution является ground truth, а command acknowledgement не заменяет reconciliation.
