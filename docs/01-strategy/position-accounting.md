@@ -1,37 +1,76 @@
 # Учёт позиции и Strategy Lot
 
-## Основная единица объёма
+## Главный принцип
 
-Основная единица размера — **количество монет**.
+Нужно жёстко разделять:
 
-### Заданный объём (`configured_qty`)
+```text
+planned future volume
+и
+factual executed/open volume
+```
 
-Объём, который трейдер хочет набрать по конкретному Grid Order.
+## configured_qty
 
-### Фактически исполненный объём (`filled_qty`)
+Текущий целевой суммарный объём конкретного Grid Order:
 
-Сколько монет биржа реально уже исполнила по этому Grid Order.
+```text
+configured_qty = filled_qty + remaining_entry_qty
+```
 
-Именно `filled_qty` является базой для расчёта фактической разгрузки.
+В основном Manual Grid он рассчитывается sizing layer, а не обязательно вводится трейдером вручную.
 
-### Открытый объём (`open_qty`)
+## filled_qty
 
-Фактически исполненный объём этого Strategy Lot за вычетом уже закрытого объёма.
+Сколько монет Bybit фактически исполнил по связанным ExchangeOrders этого Grid Order.
 
-### Закрытый объём (`closed_qty`)
+`filled_qty` является factual/immutable для sizing/restructuring.
 
-Сколько монет уже закрыто по этому Strategy Lot.
+## remaining_entry_qty
 
-## Один Grid Order — одна логическая единица стратегии
+Неисполненная future часть Entry. Может изменяться при restructuring.
 
-Даже если биржа исполнила один Grid Order несколькими fills, стратегия не дробит его на несколько ордеров.
+## open_qty
 
-Его фактическая средняя цена пересчитывается по реальным executions.
+Factual объём StrategyLot, который ещё остаётся открытым после частичных TP/manual closes.
 
-## Почему нельзя использовать только агрегированную позицию Bybit
+## closed_qty
 
-Bybit объединяет объёмы Long или Short в общую позицию.
+Factual объём StrategyLot, который уже закрыт.
 
-Наша система должна отдельно помнить происхождение каждого Grid Order: source order, configured_qty, filled_qty, фактическую среднюю цену исполнения, open_qty, closed_qty и TP configuration.
+## StrategyLot появляется после первого fill
 
-Так можно отдельно управлять разгрузкой каждого уровня и не зависеть от общей average price Bybit.
+Один Grid Order может исполняться несколькими executions.
+
+После первого execution создаётся/обновляется один StrategyLot, который хранит:
+- executions;
+- `filled_qty`;
+- quantity-weighted factual average fill;
+- `open_qty`;
+- `closed_qty`;
+- realized PnL;
+- TP1..TP4 state.
+
+Новые fills того же logical Grid Order не создают новые Grid Orders.
+
+## Bybit aggregate position и внутренняя attribution
+
+Bybit показывает агрегированную Long/Short position.
+
+Платформа дополнительно должна помнить attribution по каждому Grid Order/StrategyLot, чтобы знать:
+- какой factual volume относится к какому уровню;
+- его собственную average fill;
+- какие TP уже закрыли часть объёма;
+- какой realized PnL связан с этим lot;
+- какой future Entry remainder ещё существует.
+
+## Sizing accounting
+
+При перерасчёте future budget нельзя считать planned qty фактически занятым капиталом.
+
+Нужно отдельно учитывать:
+- factual used capital;
+- locked future capital;
+- resizable future capital.
+
+Точная production-формула `capital_base`/used margin остаётся отдельным подтверждаемым правилом.
