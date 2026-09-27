@@ -1,8 +1,8 @@
 # Модель данных
 
-**Статус: RECORDER РЕАЛИЗОВАН / MANUAL GRID INTENT И RESTRUCTURING MODEL ФОРМАЛИЗУЮТСЯ**
+**Статус: RECORDER РЕАЛИЗОВАН / MANUAL GRID, SIZING И RESTRUCTURING MODEL ФОРМАЛИЗОВАНЫ ЧАСТИЧНО**
 
-## 1. Recorder — фактическая реальность
+## 1. Recorder — factual reality
 
 Recorder хранит machine truth:
 - orders;
@@ -18,26 +18,36 @@ Recorder хранит machine truth:
 
 Recorder остаётся read-only и не является operational DB будущего Execution Engine.
 
-## 2. Strategy Intent Model
+## 2. Grid
 
-### Grid
+Долгоживущая сущность одной стороны:
 
-Долгоживущая Long или Short сетка.
+```text
+Grid
+- symbol
+- side: LONG | SHORT
+- status
+- current_revision_id
+```
 
-### GridRevision
+Long и Short являются независимыми Grid.
 
-Immutable-версия текущего intent.
+## 3. GridRevision
 
-Должна содержать:
+Immutable snapshot intent:
 - reference market snapshot;
 - allocation;
+- leverage;
+- sizing mode;
+- Power Curve `K` или per-order `M_i`;
 - active order count;
 - GridOrderConfig;
 - TP configs;
-- sizing/restructuring metadata;
-- before/after context.
+- instrument metadata snapshot reference;
+- before/after context;
+- reason/trigger.
 
-### GridOrderConfig
+## 4. GridOrderConfig
 
 Минимально:
 
@@ -48,60 +58,121 @@ level
 entry_input_mode: PRICE | PERCENT
 entry_price
 entry_offset_pct
-martingale_multiplier
+martingale_multiplier?   # только PER_ORDER_M
+raw_weight
+normalized_weight
+planned_margin
+planned_notional
 configured_qty
 filled_qty
 remaining_entry_qty
-tp_steps
+manual_qty_lock
+tp_steps                 # max 4
 source
 sizing_source
 revision_id
-```
-
-В Manual Grid geometry задаёт трейдер, а future qty рассчитывает sizing layer.
-
-### TPStepConfig
-
-Намерение по разгрузке factual StrategyLot.
-
-## 3. Restructuring Model
-
-### RestructuringPlan
-
-Предложение изменить только future intent.
-
-Минимально:
-
-```text
-id
-scope: ORDER | GRID
-side
-target_order_id?
-source_revision_id
-state_snapshot_id
-effective_side_budget
-factual_used_capital
-locked_future_capital
-available_future_budget
-orders_before
-orders_after
-reason
 validation_state
-target_revision_id
 ```
 
-Подтверждены два manual operation type:
+## 5. SideSizingConfig
+
+Отдельная конфигурация для каждой стороны:
 
 ```text
-RECALCULATE_ORDER
-RECALCULATE_GRID
+SideSizingConfig
+- side
+- sizing_mode: POWER_CURVE | PER_ORDER_M
+- power_k?       # POWER_CURVE
+- leverage
+- allocation_pct
+- active_order_count
 ```
 
-### RestructuringEvent
+`PER_ORDER_M` хранит individual multipliers внутри GridOrderConfig.
 
-Audit-факт создания/применения restructuring plan.
+## 6. StrategyLot / Filled Allocation
 
-## 4. Risk Decision Model
+Появляется после первого factual fill и хранит:
+- source GridOrderConfig;
+- linked ExchangeOrders;
+- executions;
+- `filled_qty`;
+- factual average entry;
+- `open_qty`;
+- `closed_qty`;
+- realized PnL;
+- TP1..TP4 state.
+
+Factual StrategyLot не пересчитывается sizing/restructuring engine.
+
+## 7. RestructuringPlan
+
+```text
+RestructuringPlan
+- id
+- scope: ORDER | GRID
+- side
+- trigger
+- target_order_id?
+- source_revision_id
+- state_snapshot_id
+- capital_snapshot_id
+- sizing_mode
+- power_k?
+- effective_side_budget
+- factual_used_capital
+- locked_future_capital
+- available_future_margin_budget
+- future_notional_budget
+- orders_before
+- orders_after
+- instrument_metadata_snapshot_id
+- validation_state
+- manual_review_reason?
+- target_revision_id
+```
+
+Profit-taking trigger может создавать proposal, но capital routing policy Long/Short пока OPEN.
+
+## 8. InstrumentSpec / InstrumentMetadataSnapshot
+
+Нужно хранить актуальные exchange limits, полученные из Bybit:
+
+```text
+InstrumentSpec
+- category
+- symbol
+- status
+- min_order_qty
+- qty_step
+- min_notional_value
+- max_order_qty
+- tick_size
+- fetched_at
+- source_payload_hash
+```
+
+Каждый plan должен быть воспроизводимо связан со snapshot, использованным при validation.
+
+## 9. Validation / Manual Review
+
+Концептуальные states:
+
+```text
+VALID
+BELOW_MIN_ORDER_QTY
+BELOW_MIN_NOTIONAL
+INVALID_QTY_STEP
+INVALID_TICK_SIZE
+STALE_INSTRUMENT_METADATA
+INSUFFICIENT_BUDGET
+RISK_DENIED
+MANUAL_REVIEW
+```
+
+Если один обязательный order общего plan invalid, partial apply запрещён.
+
+## 10. RiskDecision
 
 ```text
 RiskDecision
@@ -112,13 +183,13 @@ RiskDecision
 - created_at
 ```
 
-Точная схема будет определена позже.
+Точная production schema остаётся FUTURE.
 
-## 5. Execution Model
+## 11. Execution Model
 
 ### ApprovedExecutionPlan
 
-Утверждённый набор команд после Risk Manager.
+Утверждённый набор действий после technical validation и Risk Manager.
 
 ### ExecutionCommand
 
@@ -126,71 +197,52 @@ RiskDecision
 - PLACE;
 - AMEND;
 - CANCEL;
-- разрешённый CLOSE.
+- CLOSE.
 
 ### ExchangeOrder
 
-Реальный order на Bybit.
+Реальный order Bybit.
 
 ### Execution / Fill
 
-Фактическое исполнение. Это ground truth.
+Ground truth фактической сделки.
 
-## 6. Position Attribution Model
+## 12. Capital / Sizing Snapshot
 
-### StrategyLot / Filled Allocation
-
-Появляется после первого factual fill конкретного Grid Order и хранит:
-- source GridOrderConfig;
-- linked ExchangeOrders;
-- executions;
-- filled_qty;
-- actual average entry;
-- open_qty;
-- closed_qty;
-- realized PnL;
-- TP state.
-
-Factual StrategyLot не должен пересчитываться при volume restructuring будущих ордеров.
-
-## 7. Capital / Sizing Snapshot
-
-Для воспроизводимости расчёта нужна отдельная сущность/snapshot, содержащая factual inputs конкретного sizing event:
+Для каждого sizing event хранится factual input:
 
 ```text
-capital_base / factual account fields
+account fields used as capital_base candidate
 long allocation
 short allocation
 reserve
 factual used capital per side
 locked future capital
-available future budget
+available future margin budget
+future notional budget
 leverage
+sizing mode / coefficient
 instrument limits
 ```
 
-Точная production-формула `capital_base` остаётся отдельным подтверждаемым правилом.
+Точная production formula `capital_base` остаётся OPEN.
 
-## 8. Главная цепочка
+## 13. Главная цепочка
 
 ```text
-INTENT
-GridRevision / GridOrderConfig
+CONFIGURATION / INTENT
         ↓
-SIZING / RESTRUCTURING
-RestructuringPlan
+SIZING
         ↓
-RISK DECISION
-ALLOW / MODIFY / DENY
+TECHNICAL VALIDATION
         ↓
-EXECUTION INTENT
-ApprovedExecutionPlan / ExecutionCommand
+RESTRUCTURING / RISK DECISION
         ↓
-EXCHANGE REALITY
-ExchangeOrder / Execution
+APPROVED EXECUTION INTENT
         ↓
-ATTRIBUTED RESULT
-StrategyLot / PnL / Account State
+BYBIT EXCHANGE REALITY
+        ↓
+STRATEGY LOT / PNL / ACCOUNT STATE
 ```
 
-Эти уровни нельзя схлопывать в одну сущность или считать planned qty фактическим исполнением.
+Эти уровни нельзя схлопывать в одну сущность.
