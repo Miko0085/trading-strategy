@@ -1,169 +1,167 @@
 # Подтверждённые правила
 
-**Статус: ПОДТВЕРЖДЕНО**
+**Статус: CONFIRMED**
 
-## 1. Основной рабочий режим — Manual Grid
+## 1. Главный приоритет — безопасность капитала
 
-На текущем этапе основная стратегия строится не через Veles-like автогенератор диапазона, а через ручную настройку уровней Long/Short.
+Стратегия в первую очередь должна сохранять капитал, маржу и позиции. Оптимизация прибыли вторична по отношению к контролю liquidation/margin risk.
 
-Generated Grid остаётся дополнительной функцией/конструктором и не определяет основной workflow MVP.
+## 2. Основной режим — Manual Grid
 
-## 2. Grid Orders — лимитные ордера
+Generated Grid/Veles-like constructor может оставаться legacy/optional, но не определяет основной workflow.
 
-Каждый Grid Order является лимитной Entry-заявкой.
+## 3. Long и Short — независимые Grid
 
-## 3. Long и Short — независимые сетки
+Они могут иметь разные:
+- allocation;
+- leverage;
+- geometry;
+- sizing mode;
+- coefficients;
+- active window;
+- TP configuration.
 
-Они могут использовать разные уровни, allocation, active window, per-order Martingale и TP-настройки.
+## 4. Каждый Grid Order автономен
 
-## 4. Первый Entry привязан к Mark Price при запуске
+Каждый уровень имеет собственные Entry, sizing/factual fields, TP и history.
 
-При запуске фиксируется текущая Mark Price.
+В advanced mode отдельный order может иметь свой `M_i`; `M_i=1` означает отсутствие увеличения веса на этом переходе.
 
-- Long: первый Entry располагается ниже Mark Price на заданный startup offset.
-- Short: первый Entry располагается выше Mark Price на заданный startup offset.
+## 5. Entry Geometry задаётся трейдером
 
-## 5. Уровни сетки задаёт трейдер вручную
+Уровень можно задать:
+- Price;
+- Percent spacing.
 
-Для каждого будущего Grid Order трейдер может задавать:
-- абсолютную Entry Price;
-- либо процентный отступ.
+Geometry и sizing независимы.
 
-Для #1 процент относится к reference/Mark Price. Для #2+ процент может задаваться относительно предыдущего уровня.
+## 6. Qty рассчитывает система
 
-## 6. Геометрия и sizing разделены
+Sizing использует future budget стороны, leverage, Entry Price, sizing weights и Bybit instrument limits.
+
+Martingale применяется к margin/notional, а не напрямую к coin qty.
+
+## 7. Для текущего функционала нужны два sizing mode
 
 ```text
-Grid Geometry = где находятся уровни
-Grid Sizing   = какой объём получает каждый уровень
+POWER_CURVE
+PER_ORDER_M
 ```
 
-Изменение sizing не должно автоматически менять цены уровней.
+Другие modes пока не входят в MVP.
 
-## 7. Qty в основном Manual Grid рассчитывает система
+## 8. POWER_CURVE
 
-Трейдер задаёт allocation стороны, leverage, цены уровней и Martingale-параметры.
+Для eligible future orders `i=1..N`:
 
-Система рассчитывает `configured_qty` на основании:
-- доступного бюджета стороны;
-- уже фактически использованного капитала;
-- цен уровней;
-- leverage;
-- per-order Martingale chain;
-- Bybit `qtyStep`, `minOrderQty`, `minNotionalValue`.
+```text
+raw_weight_i = (i/N)^K
+```
 
-## 8. Martingale задаётся индивидуально на каждый ордер
+`K` задаётся независимо для Long и Short. После этого веса нормализуются на future budget.
 
-Коэффициент конкретного ордера является множителем относительно предыдущего веса.
+Чем выше `K`, тем больше future capital смещается к дальним levels.
+
+## 9. PER_ORDER_M
+
+Advanced mode:
 
 ```text
 w1 = 1
-w2 = w1 × M2
-w3 = w2 × M3
-...
-wn = w(n-1) × Mn
+w_i = w_(i-1) × M_i
 ```
 
-Пример:
+Каждый переход между уровнями имеет собственный multiplier.
+
+Один global geometric Martingale не нужен как отдельный mode: одинаковые `M_i` воспроизводят его.
+
+## 10. Factual fills immutable
+
+После исполнения factual volume нельзя перераспределять задним числом.
 
 ```text
-M2 = 1.20
-M3 = 1.50
-
-w1 = 1.00
-w2 = 1.20
-w3 = 1.80
-```
-
-Полученные cumulative weights затем нормализуются на доступный future budget стороны.
-
-## 9. Active Order Window обязателен
-
-Полная логическая сетка может содержать больше уровней, чем одновременно размещено на Bybit.
-
-Трейдер задаёт `active_order_count`, например 3, 4 или 5. По мере исполнения активного Entry следующий queued level занимает освободившееся место.
-
-## 10. Один Grid Order может иметь несколько fills
-
-Несколько executions не создают несколько Grid Orders.
-
-## 11. Factual filled volume immutable
-
-После фактического исполнения уже набранный объём нельзя уменьшать или перераспределять как будто сделки не было.
-
-Пересчитываться может только future/pending часть:
-
-```text
+configured_qty = filled_qty + remaining_entry_qty
 configured_qty >= filled_qty
-remaining_entry_qty = configured_qty - filled_qty
 ```
 
-## 12. Реструктуризация объёма поддерживает два scope
+## 11. StrategyLot появляется после первого fill
 
-Подтверждены два ручных действия:
+Несколько executions одного Entry остаются одним logical Grid Order / StrategyLot attribution.
+
+## 12. Active Order Window
+
+Полная logical Grid может быть больше числа фактических Entry orders на Bybit.
+
+## 13. Manual restructuring
+
+Поддерживаются:
 
 ```text
 RECALCULATE_ORDER
 RECALCULATE_GRID
 ```
 
-### RECALCULATE_ORDER
+Full-grid recalculation заново распределяет eligible future budget по выбранному sizing mode.
 
-Пересчитывается future qty выбранного Grid Order в пределах доступного бюджета стороны. Остальные уровни не должны автоматически изменяться.
+## 14. Profit-taking event — trigger для нового расчёта
 
-### RECALCULATE_GRID
+Исполнение прибыльного TP/close должно инициировать:
+- fresh factual account state;
+- пересчёт future budget;
+- новый sizing/restructuring proposal.
 
-Весь оставшийся future budget стороны перераспределяется между всеми eligible pending levels по текущей per-order Martingale chain.
+Куда именно маршрутизировать капитал между Long/Short — пока OPEN.
 
-## 13. Добавление нового уровня допускает перерасчёт
+## 15. Максимум четыре TP parts
 
-После добавления нового Grid Order трейдер может:
-- рассчитать только новый ордер;
-- либо перераспределить future budget по всей оставшейся сетке.
-
-## 14. Factual used capital учитывается до перераспределения
-
-Общая логика:
+Один Grid Order / StrategyLot использует максимум:
 
 ```text
-Side Budget
-- Factual Used Capital
-- Locked Future Capital
-= Available Future Budget
+TP1
+TP2
+TP3
+TP4
 ```
 
-Только этот future budget может перераспределяться между pending levels.
+Доли не обязаны быть равными.
 
-## 15. Take Profit считается от фактического исполнения
+## 16. TP считается от factual StrategyLot
 
-TP конкретного StrategyLot рассчитывается от его factual average fill и factual open qty.
+TP использует factual average fill и factual open qty конкретного StrategyLot.
 
-Если Entry исполнен частично, TP относится только к фактически исполненному объёму.
+## 17. Биржевые limits берутся динамически из Bybit
 
-## 16. Take Profit — лимитный
-
-Обычный TP реализуется лимитными закрывающими заявками.
-
-## 17. Биржевые минимумы берутся с Bybit
-
-Перед планированием/размещением используются актуальные:
+Минимально:
 - `minOrderQty`;
 - `qtyStep`;
 - `minNotionalValue`;
-- `tickSize`.
+- `tickSize`;
+- instrument status.
 
-## 18. Изменения конфигурации создают Grid Revision
+## 18. Invalid order блокирует весь соответствующий plan
 
-Существенные изменения intent должны быть доступны в before/after audit и новой immutable revision.
+Если любой обязательный order нового Execution/Restructuring Plan не проходит актуальные exchange limits:
 
-## 19. Внешнее ручное вмешательство не запускает скрытую перестройку
+```text
+PLAN_INVALID
+→ MANUAL_REVIEW
+→ NO PARTIAL APPLY
+```
 
-Если factual Bybit state отличается от ожидаемого, система должна показать расхождение и потребовать подтверждение Adopt/Restore.
+Система не должна автоматически увеличивать qty, использовать Reserve, пропускать level или менять sizing parameters.
 
-## 20. Внешние сигналы не используются
+## 19. Grid Revision обязательна
 
-Стратегия не использует новости, sentiment, технические индикаторы, прогнозы, мнения аналитиков или AI price prediction.
+Существенные изменения intent/sizing должны сохраняться как immutable revision с before/after audit.
 
-## 21. Generated Grid остаётся дополнительным режимом
+## 20. External intervention требует reconciliation
 
-Подтверждённая normalized power distribution и глобальный geometric martingale для Generated Grid не удаляются, но относятся только к optional/legacy constructor и не являются основной моделью Manual Grid MVP.
+Расхождение Bybit vs Platform не должно запускать скрытую стратегическую перестройку. Нужен Adopt/Restore flow.
+
+## 21. Внешние сигналы запрещены
+
+Не используются news, sentiment, technical indicators, analyst forecasts или AI price prediction.
+
+## 22. Short не считается симметричным Long
+
+**CONFIRMED AS STRATEGY DESIGN PRINCIPLE:** настройки Short не выводятся автоматически из Long. Роль Short в стратегии может быть иной, поэтому sizing/risk/TP конфигурируются независимо.
