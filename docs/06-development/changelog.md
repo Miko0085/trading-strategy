@@ -1,53 +1,43 @@
 # История изменений документации
 
+## 2026-09-27 — полный аудит sizing / Martingale / safety
+
+- Повторно проаудированы все разделы GitBook: overview, strategy, algorithm, risk, platform, research и development.
+- Исправлены устаревшие формулировки, где qty считался вручную заданным основным параметром.
+- Зафиксирован safety-first priority: сначала сохранение капитала/маржи/позиции, затем profit optimization.
+- Long и Short закреплены как полностью независимые Grid с независимыми sizing settings.
+- Каждый Grid Order закреплён как автономная сущность со своей Entry/TP/factual history.
+- Martingale/sizing формализован через margin/notional, а не напрямую через coin qty.
+- MVP сокращён до двух sizing modes: `POWER_CURVE` и advanced `PER_ORDER_M`.
+- `POWER_CURVE` формализован как `raw_weight_i=(i/N)^K` с независимым `K` для Long/Short.
+- `PER_ORDER_M` формализован как cumulative chain `w_i=w_(i-1)×M_i`; `M_i=1` отключает увеличение на конкретном шаге.
+- Отдельные Linear/Equal/Reverse/Global-Geometric/Manual-Weights modes исключены из текущего MVP scope.
+- Уточнено различие: Veles Logarithmic Distribution относится к price spacing, а наша Power Curve — к volume/notional sizing.
+- Profitable TP/close повышен до подтверждённого trigger для fresh-state recalculation и restructuring proposal; routing/apply policy остаются OPEN.
+- Hard Bybit minimum-lot guard закреплён как atomic invariant: любой invalid mandatory order → `MANUAL_REVIEW`, без partial apply.
+- Добавлена модель InstrumentSpec / instrument metadata snapshot.
+- Обновлены risk docs, Execution Engine, Bybit integration, data model, open questions и roadmap.
+
 ## 2026-09-23 — Manual Grid становится основным workflow
 
-- Generated Grid переведён в дополнительный/legacy constructor и больше не считается основным способом работы трейдера.
-- Основной workflow теперь: Manual Grid Geometry → Capital Allocation → Per-Order Martingale → Automatic Future Qty → Active Order Window → Manual Volume Restructuring.
-- Для Manual Grid подтверждён ввод уровня как абсолютной Entry Price либо процентного spacing.
-- Подтверждён per-order Martingale: каждый multiplier умножает вес предыдущего уровня.
-- Глобальный `M^i` сохранён только для optional Generated Grid.
-- Подтверждено, что qty Manual Grid рассчитывает система из бюджета стороны, leverage, цены уровня и Bybit instrument limits.
-- Factual fills закреплены как immutable; перераспределяться может только `remaining_entry_qty`.
-- Подтверждены два manual restructuring scope: `RECALCULATE_ORDER` и `RECALCULATE_GRID`.
-- Добавление нового Grid Order может сопровождаться расчётом только нового уровня либо перераспределением всей future grid.
-- Обновлены Strategy Overview, Grid Mechanics, Current Algorithm, Restructuring Algorithm, Order Model, Data Model, Confirmed Rules, Open Questions, Roadmap и журнал решений.
-- Полностью переписан `prototype/manual-grid-ui/IMPLEMENTATION_PROMPT.md` под новую механику.
-- Обновлён README Manual Grid UI с явным разделением текущего кода и целевой подтверждённой модели.
+- Generated Grid переведён в дополнительный/legacy constructor.
+- Manual Grid Geometry отделена от sizing.
+- PRICE/PERCENT input подтверждён.
+- Qty переведён в system-calculated future sizing.
+- Factual fills закреплены immutable.
+- Подтверждены `RECALCULATE_ORDER` и `RECALCULATE_GRID`.
 
 ## 2026-09-19 — архитектурная реорганизация
 
 - Разделены Strategy Decision, Risk Manager, Execution Engine и Recorder.
-- Базовый Grid Algorithm очищен от decision/risk/platform responsibilities.
-- Active Order Window вынесен в отдельную execution policy.
-- GridOrderConfig и ExchangeOrder получили раздельные lifecycle.
-- Grid отделён от Grid Revision.
-- StrategyLot/Filled Allocation теперь появляется после первого фактического fill.
-- Restructuring Algorithm перестроен вокруг Capital Recalculation → Volume Recovery → Grid Restructuring → RestructuringPlan.
-- Research capture реструктуризации вынесен в отдельный документ.
-- Data Model расширен RestructuringPlan, RiskDecision, ApprovedExecutionPlan и ExecutionCommand.
-- Roadmap разделён на Domain Model, Execution Core, Restructuring Research, Risk Manager и Controlled Automation.
-
-## 2026-09-19 — уточнение механики после разговора с трейдером
-
-- Исправлена прежняя интерпретация partial fill: TP считается от factual `filled_qty`.
-- Зафиксировано, что несколько fills одного Grid Order остаются одной логической единицей.
-- Подтверждено: обычный Take Profit является limit order.
-- Подтверждён Active Order Window.
-- Зафиксирована первая версия manual percentage spacing; 2026-09-23 она расширена режимом absolute price.
-
-## 2026-09-19 — русификация
-
-- Русский язык закреплён как основной язык публичной документации.
-- Навигация GitBook переведена на русский.
-- Добавлены русские определения технических терминов.
-- Добавлено разделение GridOrderState / StrategyLotState / TPStepState.
-- Добавлена обязательная история Grid Revision.
-- Добавлена политика реакции на ручное вмешательство через терминал Bybit.
+- Active Order Window вынесен в execution policy.
+- GridOrderConfig и ExchangeOrder получили разные lifecycle.
+- StrategyLot/Filled Allocation появляется после первого fill.
+- Grid Revision стала обязательным immutable audit layer.
 
 ## 2026-09-18
 
 - Создана структура docs/.
 - GitBook подключён через Git Sync.
 - Зафиксирован запрет на внешние сигналы.
-- Разделены Recorder и Execution Engine.
+- Recorder и Execution Engine разделены.
