@@ -1,80 +1,116 @@
 # Обзор стратегии
 
-**Статус: ПОДТВЕРЖДЁННАЯ БАЗОВАЯ МЕХАНИКА + ОТКРЫТЫЕ АВТОМАТИЧЕСКИЕ РЕШЕНИЯ**
+**Статус: ПОДТВЕРЖДЁННАЯ БАЗОВАЯ МЕХАНИКА + ОТКРЫТАЯ МАРШРУТИЗАЦИЯ РЕИНВЕСТА**
+
+## Главный принцип
+
+Первый приоритет стратегии — сохранить капитал, маржу и позиции. Улучшение average price, hedge structure и прибыльность происходят после safety checks.
 
 ## Текущий основной workflow
 
-На текущем этапе стратегия строится вокруг ручной настройки геометрии сетки и автоматического расчёта будущего объёма.
-
 ```text
 Trader Configuration
-→ Manual Grid Geometry
-→ Capital Allocation
-→ Per-Order Martingale Chain
+→ Manual Long / Short Grid Geometry
+→ Side Capital Allocation
+→ Sizing Mode
+   - POWER_CURVE
+   - PER_ORDER_M [advanced]
 → Automatic Future Qty
+→ Bybit Instrument Validation
 → Active Order Window
 → Execution
 → Factual Fills / StrategyLots
-→ Manual Volume Restructuring
+→ TP1..TP4
+→ Profit-taking Trigger
+→ Restructuring Proposal
 ```
 
-Generated Grid остаётся дополнительным конструктором и не является основным режимом MVP.
+Generated Grid/Veles-like constructor остаётся legacy/optional и не является основным UI/workflow.
 
-## Что уже подтверждено
+## Long и Short
 
-- стратегия поддерживает Long и Short как отдельные сетки;
-- Grid Orders являются лимитными Entry orders;
-- первый Entry привязан к Mark Price в момент запуска;
-- трейдер задаёт уровни вручную;
-- уровень можно задавать абсолютной ценой либо процентным расстоянием;
-- Grid Geometry и Grid Sizing разделены;
-- Long / Short allocation задаётся процентами;
-- future qty рассчитывается системой из бюджета стороны, leverage и instrument limits;
-- Martingale multiplier задаётся индивидуально на каждый ордер и умножает вес предыдущего уровня;
-- factual filled volume immutable;
-- pending/future qty может быть перераспределён;
-- есть два ручных scope реструктуризации: `RECALCULATE_ORDER` и `RECALCULATE_GRID`;
-- новые уровни можно добавлять в существующую сетку и после этого пересчитывать один уровень либо всю future часть;
-- на Bybit одновременно поддерживается только заданное Active Order Window;
-- один Grid Order может иметь несколько fills и остаётся одной логической единицей;
-- TP строится от factual average fill и factual open qty конкретного StrategyLot;
-- изменения конфигурации сохраняются как Grid Revision;
-- внешние сигналы, технические индикаторы, новости, sentiment и AI price prediction не используются.
+Long и Short — независимые стороны Hedge Mode. У них могут отличаться:
+- allocation;
+- leverage;
+- geometry;
+- sizing mode;
+- Power Curve `K`;
+- per-order `M_i`;
+- Active Order Window;
+- TP configuration;
+- risk constraints.
 
-## Что ещё не формализовано полностью
+Каждый Grid Order также является автономной сущностью со своей factual history.
 
-- production-формула `capital_base` без двойного учёта PnL;
-- автоматические triggers реструктуризации;
-- автоматический reinvest;
-- правила восстановления разгруженного объёма;
-- полный rebase/trailing policy;
-- Stop Loss;
-- точные risk limits и emergency actions;
-- autonomous strategy decisions.
+## Подтверждённая механика
+
+- Manual Grid — основной режим;
+- Entry задаётся абсолютной ценой или процентным spacing;
+- Geometry и Sizing независимы;
+- qty рассчитывается системой из future budget, leverage, sizing weights и Entry Price;
+- sizing применяется к margin/notional, а не напрямую к coin qty;
+- для MVP нужны два sizing mode: `POWER_CURVE` и `PER_ORDER_M`;
+- `POWER_CURVE` автоматически формирует веса всей стороны по коэффициенту `K`;
+- `PER_ORDER_M` позволяет каждому переходу Grid Order иметь свой multiplier; `M_i=1` означает отсутствие увеличения на этом шаге;
+- factual fills immutable;
+- pending/future qty может пересчитываться;
+- один Grid Order может иметь несколько fills;
+- StrategyLot появляется после первого fill;
+- максимум четыре TP parts на StrategyLot;
+- profitable TP/close является trigger для нового расчёта/restructuring proposal;
+- Active Order Window ограничивает число фактических Entry orders на Bybit;
+- существенные изменения intent создают Grid Revision.
+
+## Sizing pipeline
+
+```text
+Future Margin Budget
+× leverage
+= Future Notional Budget
+
+Future Notional Budget
+× normalized sizing weights
+= notional_i
+
+qty_i = notional_i / entry_price_i
+```
+
+После этого qty/price проходят Bybit normalization и hard validation.
+
+## Hard execution rule
+
+Если хотя бы один обязательный order нового плана не проходит актуальные `minOrderQty`, `qtyStep`, `minNotionalValue` или `tickSize`, план не применяется частично:
+
+```text
+INVALID PLAN
+→ MANUAL_REVIEW
+→ NO PARTIAL APPLY
+```
+
+## Что ещё OPEN
+
+- точная production-формула `capital_base`;
+- что именно считается reinvestable capital: net realized profit или released capital + profit;
+- маршрутизация reinvestment между Long / Short / обеими сторонами;
+- автоматический cross-side priority;
+- recovery/rebase/trailing rules;
+- точные Risk Manager limits;
+- Stop Loss / emergency exit policy.
 
 ## Архитектурное разделение
 
 ```text
-Strategy Rules / Trader Configuration
+Strategy / Configuration
         ↓
-Grid Planner + Sizing Planner
-        ↓
-Restructuring Planner
+Sizing + Restructuring Planner
         ↓
 Risk Manager
         ↓
 Execution Engine
         ↓
 Bybit
+
+Bybit → Recorder → Research/Reconciliation
 ```
 
-Параллельно Recorder независимо фиксирует фактическую реальность Bybit.
-
-- **Decision / Planning layer** формирует намерение и proposed changes.
-- **Risk layer** проверяет допустимость.
-- **Execution layer** механически исполняет утверждённый план.
-- **Recorder** фиксирует, что реально произошло.
-
-## Generated Grid
-
-Подтверждённые Veles-like формулы Generated Grid не удаляются, но относятся к optional constructor. Они не должны ограничивать Manual Grid и не являются основной sizing-моделью стратегии.
+Recorder остаётся независимо read-only.
