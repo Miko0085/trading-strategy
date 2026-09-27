@@ -1,71 +1,60 @@
 # Открытые вопросы
 
-**Статус: ОТКРЫТЫЕ ВОПРОСЫ ПО НЕПОДТВЕРЖДЁННОЙ АВТОМАТИКЕ И CAPITAL SEMANTICS**
+**Статус: OPEN — CAPITAL ROUTING, RISK, RECOVERY И EXECUTION EDGE CASES**
 
-Подтверждённые правила Manual Grid, per-order Martingale и ручного volume restructuring отсюда удалены. Здесь остаются только реально нерешённые вопросы.
-
-## Base Grid / Execution
-
-1. Как синхронизировать TP при новых partial fills одного Entry Grid Order: amend существующих TP или создавать дополнительные?
-2. Когда именно partial-filled Entry должен освобождать слот Active Order Window: после первого fill, полного fill или по отдельному правилу?
-3. Какая runtime-политика нужна для cancel/amend оставшейся части partial-filled Entry после restructuring?
+Sizing modes `POWER_CURVE` и `PER_ORDER_M`, максимум 4 TP parts, factual fill immutability и atomic minimum-lot guard больше не являются открытыми вопросами.
 
 ## Capital Base
 
-4. Какое точное factual поле/формула является production `capital_base`?
-5. Как исключить двойной учёт realized/unrealized PnL при расчёте Effective Side Budget?
-6. Как формально применяется reserve при разных режимах cross margin?
-7. Какие factual margin fields являются authoritative для уже использованного капитала на конкретном типе Bybit account?
+1. Какое factual поле/формула является production `capital_base`?
+2. Как исключить double counting realized/unrealized PnL?
+3. Что именно считается reinvestable capital после profitable TP: net realized profit или released capital + profit?
+4. Как reserve применяется в cross margin?
+5. Какие margin fields authoritative для factual used capital?
+
+## Reinvestment Routing
+
+6. Базовый routing: same-side, cross-side risk-priority или обе стороны?
+7. Если cross-side — какая формула задаёт приоритет?
+8. Достаточно ли distance Mark→LongAvg/ShortAvg или обязательны liquidation/margin metrics?
+9. Сохраняются ли базовые Long/Short allocation percentages после reinvestment?
+10. Допустимо ли временное отклонение от allocation ради safety?
+11. Что делать, если новый capital достаточен для minimum lot только одной стороны?
 
 ## Automatic Restructuring
 
-8. Должно ли исполнение любого прибыльного TP / profitable close автоматически запускать full-grid recalculation или только создавать restructuring proposal?
-9. Нужен ли cooldown/debounce между автоматическими перерасчётами при серии TP/fills?
-10. Должен ли trigger Long по умолчанию реинвестировать только в Long, trigger Short — только в Short?
-11. Если разрешён cross-side reinvestment, по какой формуле определяется приоритет Long против Short?
-12. Может ли расстояние Mark Price до factual average Long/Short быть одним из primary risk factors, или обязательно использовать liquidation/margin metrics?
-13. Сохраняются ли базовые Long/Short allocation percentages при reinvestment или допускается временное динамическое отклонение?
-14. Допустимо ли распределять новый reinvestable capital сразу между обеими сторонами?
-15. Что делать, если распределение между всеми нужными сторонами/уровнями создаёт хотя бы один order ниже Bybit min lot/notional?
-16. Когда нужен полный rebase geometry на новую reference price?
-17. Когда начинается новый Grid Cycle вместо новой revision текущего cycle?
+12. Profitable TP уже является trigger для нового proposal. Должен ли proposal автоматически применяться после Risk Check или пока требовать подтверждение?
+13. Нужен ли cooldown/debounce при серии TP/fills?
+14. Как дедуплицировать повторный trigger одного factual execution?
+15. Когда full-grid recalculation создаёт новую Grid Cycle, а когда только Revision?
 
-## Reinvestment / Recovery
+## Recovery / Trailing
 
-18. Что именно реинвестируется после прибыльного закрытия: только net realized profit или весь released capital + profit?
-19. Какая доля reinvestable capital автоматически добавляется к future budget?
-20. Должен ли unrealized PnL участвовать в production sizing, и если да — по какой подтверждённой формуле?
-21. Какой объём восстанавливать после прибыльной разгрузки?
-22. На каком уровне/условии создавать recovery order?
-23. Recovery должен быть отдельным ордером или частью общего `RECALCULATE_GRID`?
-24. Какой минимальный reinvestment имеет смысл, чтобы не дробить капитал на технически неисполняемые ордера?
-25. Если valid restructuring возможен только для одной стороны, допускается ли временно направить весь reinvestable capital только туда?
+16. Нужен ли отдельный recovery order после TP или достаточно общего `RECALCULATE_GRID`?
+17. Какой trigger двигает pending Geometry?
+18. Trailing непрерывный или дискретный?
+19. Когда нужен полный rebase на новую Mark Price?
 
-## Trailing
+## TP / Partial Fill
 
-26. Какой trigger двигает pending geometry?
-27. Trailing работает непрерывно или дискретными шагами?
-28. Что делать с вручную зафиксированными Entry/TP fields при trailing?
+20. Если Entry получает новые fills после выставления TP, amend существующие TP или перераспределять qty в рамках максимум четырёх TP parts?
+21. Когда partial-filled Entry освобождает слот Active Order Window?
+22. Какая cancel/amend policy применяется к remaining Entry после restructuring?
 
-## Strategy Capital / Risk
+## Risk Manager
 
-29. Какой минимальный рабочий капитал нужен для запуска конкретной сетки сверх биржевых минимумов?
-30. Какие margin/equity/exposure limits должен применять Risk Manager?
-31. Какой минимальный reserve обязателен?
-32. Какие emergency actions разрешены Risk Manager?
-33. Когда Risk Manager должен ALLOW / MODIFY / DENY?
+23. Какой minimum reserve обязателен?
+24. Как измерять допустимый liquidation distance?
+25. Какие max exposure limits нужны?
+26. При каких условиях ALLOW / MODIFY / DENY?
+27. Какие emergency actions разрешены?
+28. Нужны ли hard limits для `K` и `M_i` или достаточно exposure/risk limits?
 
-## Bybit semantics, которые нужно проверить фактически
+## Bybit Production Semantics
 
-34. Семантика `execPnl` и fees для расчёта net realized PnL.
-35. Точное поведение position/account fields для используемого account mode.
-36. Поведение amend/cancel/replace при частично исполненном Entry в будущей write-интеграции.
-37. Как часто refreshить instrument limits и какой freshness threshold обязателен перед PLACE/AMEND/restructuring validation?
+29. Точная semantics account/margin fields для используемого UTA/cross-margin mode.
+30. `execPnl`, fees и funding для net realized PnL.
+31. Поведение amend/cancel/replace partially-filled Entry.
+32. Freshness policy InstrumentSpec перед PLACE/AMEND.
 
-## Safety rule уже не является открытым вопросом
-
-Если новый restructuring plan содержит хотя бы один обязательный order, который после нормализации не проходит актуальные Bybit `minOrderQty`, `qtyStep`, `minNotionalValue` или price `tickSize`, план не применяется частично. Он переводится в `MANUAL_REVIEW` и требует нового расчёта/решения.
-
-Подробное исследование routing logic: `reinvestment-routing-research.md`.
-
-Эти вопросы нельзя заполнять предположениями.
+Эти вопросы нельзя закрывать предположениями.
