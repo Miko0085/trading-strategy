@@ -1,30 +1,33 @@
 # Архитектура платформы
 
-**Статус: RECORDER РЕАЛИЗОВАН / EXECUTION CORE ПРОЕКТИРУЕТСЯ / DECISION И RISK LAYERS ФОРМАЛИЗУЮТСЯ**
+**Статус: RECORDER РЕАЛИЗОВАН / SIZING И EXECUTION CORE ПРОЕКТИРУЮТСЯ**
 
 ## Основной поток
 
 ```text
-Trader Configuration / Confirmed Strategy Rules
+Trader Configuration / Confirmed Rules
                     ↓
-             Decision Layer
+             Planning Layer
         ┌───────────┴───────────┐
         ↓                       ↓
 Base Grid Planner      Restructuring Planner
-                                ↓
-                         RestructuringPlan
-                                ↓
-                           Risk Manager
-                      ALLOW / MODIFY / DENY
-                                ↓
-                     Approved Execution Plan
-                                ↓
-                         Execution Engine
-                                ↓
-                              Bybit
+        ↓                       ↓
+      Sizing Engine (POWER_CURVE / PER_ORDER_M)
+                    ↓
+           Technical Validation
+       Bybit limits / position mode
+                    ↓
+              Risk Manager
+          ALLOW / MODIFY / DENY
+                    ↓
+         Approved Execution Plan
+                    ↓
+            Execution Engine
+                    ↓
+                  Bybit
 ```
 
-Параллельно и независимо:
+Параллельно:
 
 ```text
 Bybit
@@ -34,70 +37,76 @@ Recorder
 Research / Reconciliation / Dataset
 ```
 
-## 1. Strategy / Configuration Layer
+## Strategy / Configuration
 
-Содержит подтверждённые правила и параметры, заданные трейдером. Прямого write-path к Bybit у него нет.
+Хранит Manual Geometry, allocation, leverage, sizing mode, coefficients, Active Window, TP1..TP4 и revisions.
 
-## 2. Decision Layer
+## Sizing Engine
 
-### Base Grid Planner
-Строит механический план текущей Grid Revision: уровни, qty, active order window и TP configuration.
+Распределяет только future budget.
 
-### Restructuring Planner
-Формирует новый RestructuringPlan. Он не отправляет ордера напрямую.
+Поддерживаются два MVP mode:
+- `POWER_CURVE`;
+- `PER_ORDER_M`.
 
-## 3. Risk Manager
+Он не меняет factual fills и не решает Long↔Short routing.
 
-Независимый safety/decision gate. Возвращает ALLOW / MODIFY / DENY.
+## Technical Validation
 
-## 4. Execution Engine
+До Risk Manager/Execution plan должен пройти актуальные exchange constraints:
+- instrument status;
+- `minOrderQty`;
+- `qtyStep`;
+- `minNotionalValue`;
+- `tickSize`;
+- position mode.
 
-Execution Engine должен быть максимально детерминированным.
+Любой обязательный invalid order:
 
-Он:
-- получает уже утверждённый план;
-- валидирует биржевые ограничения;
-- создаёт/amend/cancel ExchangeOrders;
-- синхронизирует TP;
-- поддерживает idempotency;
-- ведёт command audit;
-- делает reconciliation ожидаемого и фактического состояния.
+```text
+MANUAL_REVIEW
+NO PARTIAL APPLY
+```
 
-Он не должен:
-- придумывать sizing;
-- решать, когда реструктурировать Grid;
-- менять capital allocation;
-- принимать risk decisions.
+## Risk Manager
 
-## 5. Recorder
+Оценивает capital/margin/exposure/liquidation risk. Не исправляет биржевые минимумы и не прогнозирует рынок.
 
-Recorder навсегда остаётся read-only и фиксирует фактическую реальность Bybit независимо от decision layer.
+## Execution Engine
 
-## 6. Ручное вмешательство через Bybit
+Механически исполняет ApprovedExecutionPlan, обеспечивает idempotency, REST/WS reconciliation, restart recovery и audit.
+
+Он не придумывает sizing/routing.
+
+## Recorder
+
+Permanently read-only. Фиксирует machine truth независимо от platform intent.
+
+## Profit-taking trigger
+
+Profitable TP/close создаёт новый factual state refresh и restructuring proposal. Automatic routing/apply policy пока OPEN.
+
+## External intervention
 
 ```text
 Expected Platform State
 ≠
 Actual Bybit State
 ↓
-Notify Trader
+Notify
 ↓
-Require Confirmation
-↓
-Adopt external state
-OR
-Restore platform state where technically safe
+Adopt / Restore after confirmation
 ```
 
-Уже произошедшие executions не компенсируются автоматически.
+Уже случившиеся executions immutable.
 
 ## Жёсткие границы
 
 ```text
-Decision Layer = что хотим сделать
-Risk Manager   = можно ли это делать
-Execution      = как безопасно исполнить
-Recorder       = что реально произошло
+Planning  = что хотим сделать
+Sizing    = сколько future capital получает каждый order
+Validation= технически исполним ли plan
+Risk      = безопасен ли plan
+Execution = как отправить и подтвердить commands
+Recorder  = что реально произошло
 ```
-
-Эти ответственности нельзя объединять в один модуль.
