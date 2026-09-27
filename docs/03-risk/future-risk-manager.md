@@ -1,10 +1,12 @@
 # Будущий Risk Manager
 
-**Статус: БУДУЩЕЕ / НЕЗАВИСИМЫЙ SAFETY И DECISION GATE**
+**Статус: FUTURE / INDEPENDENT SAFETY GATE**
 
-Risk Manager — отдельный слой между планированием действий и реальным исполнением.
+Risk Manager — отдельный слой между Planning и Execution.
 
-Он не является частью Restructuring Algorithm и не является частью Execution Engine.
+## Главный принцип
+
+Первый приоритет — сохранить капитал, маржу и позиции. Risk Manager не максимизирует прибыль и не прогнозирует рынок.
 
 ## Контракт
 
@@ -12,6 +14,8 @@ Risk Manager — отдельный слой между планирование
 Strategy / Restructuring Planner
         ↓
 Proposed Plan
+        ↓
+Technical Execution Validation
         ↓
 Risk Manager
         ↓
@@ -22,47 +26,77 @@ Approved Execution Plan
 Execution Engine
 ```
 
-## Что он потенциально будет проверять
+Technical Bybit validation и Risk Manager — разные уровни:
+- `minOrderQty`, `qtyStep`, `minNotionalValue`, `tickSize` — hard technical gate;
+- exposure/margin/liquidation/reserve — risk gate.
+
+Если technical plan invalid, он вообще не должен доходить до обычного ALLOW flow.
+
+## Что Risk Manager потенциально проверяет
 
 - equity;
-- available balance;
 - available margin;
-- margin reserve;
-- Long exposure;
-- Short exposure;
-- gross exposure;
-- allocation limits;
-- concentration;
+- reserve;
+- Long / Short exposure;
+- gross/net exposure;
+- allocation utilization;
+- leverage;
 - liquidation distance;
+- effect of proposed orders on weighted average;
+- concentration per symbol;
+- total future pending notional;
 - capital budget;
-- ограничения по конкретной монете;
-- минимальный необходимый запас капитала.
+- stress under adverse price movement.
 
-## Типы результата
+## Sizing-aware risk
+
+Risk Manager должен видеть не только coin qty, но и:
+- sizing mode;
+- `K`;
+- per-order `M_i`;
+- margin_i;
+- notional_i;
+- cumulative future exposure.
+
+Высокий `K` или отдельный большой `M_i` не запрещён сам по себе, но может привести к DENY/MODIFY из-за итоговой экспозиции.
+
+## Результаты
 
 ### ALLOW
-План может быть исполнен без изменений.
+
+План допустим без изменений.
 
 ### MODIFY
-План допустим только после ограничения параметров, например уменьшения qty или сохранения большего margin reserve.
 
-Точные правила MODIFY пока не определены.
+Risk Manager может предложить ограничение параметров только по заранее подтверждённым правилам. Он не должен сам придумывать новую Grid Geometry или routing capital.
 
 ### DENY
-Действие не передаётся в Execution Engine.
+
+Plan не передаётся в Execution Engine.
 
 ## Emergency actions
 
 Только после отдельной формализации:
 - block new entries;
+- freeze restructuring;
 - reduce exposure;
 - early unload;
 - emergency close.
 
+## Что пока OPEN
+
+- минимальный reserve;
+- допустимый liquidation distance;
+- limits на gross exposure;
+- limits на side allocation;
+- rules ALLOW/MODIFY/DENY;
+- emergency actions;
+- cross-side capital priority.
+
 ## Risk Manager не прогнозирует рынок
 
-Он отвечает не на вопрос «куда пойдёт цена», а на вопрос:
+Он отвечает:
 
-> Допустимо ли предложенное действие при текущем состоянии капитала и позиции?
+> Допустим ли proposed plan при текущем factual состоянии капитала, позиций и биржевых ограничений?
 
 Новости, sentiment, technical indicators и AI price prediction не используются.
