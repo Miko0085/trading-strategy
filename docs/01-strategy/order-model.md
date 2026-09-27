@@ -14,55 +14,76 @@ StrategyLot / Filled Allocation
 TP / Partial Close / Full Close
 ```
 
-## 1. GridOrderConfig — намерение трейдера
+## 1. GridOrderConfig — intent конкретного уровня
 
-Хранит как минимум:
-- номер уровня;
-- Long / Short;
+Минимально хранит:
+- `id`;
+- `side`: LONG | SHORT;
+- `level`;
 - `entry_input_mode`: PRICE | PERCENT;
-- `entry_price` и/или `offset_pct`;
-- `martingale_multiplier` конкретного уровня;
+- `entry_price` / `offset_pct`;
 - `configured_qty`;
 - `filled_qty`;
 - `remaining_entry_qty`;
-- TP Steps;
-- source / sizing source;
-- revision конфигурации.
+- `manual_qty_lock`;
+- TP1..TP4 config;
+- source / revision.
 
-Для основного Manual Grid трейдер задаёт геометрию и per-order Martingale, а `configured_qty`/`remaining_entry_qty` рассчитываются системой.
+Sizing parameters разделены на side-level и order-level.
 
-Это описание того, **что система собирается сделать**, а не факт исполнения.
-
-## 2. Per-Order Martingale
-
-В Manual Grid коэффициент уровня относится к предыдущему весу:
+### Side-level
 
 ```text
-w1 = 1
-w2 = w1 × M2
-w3 = w2 × M3
-...
+sizing_mode: POWER_CURVE | PER_ORDER_M
+power_k?      # только POWER_CURVE
+leverage
 ```
 
-Коэффициент является частью intent конкретного GridOrderConfig.
+### Order-level
 
-## 3. ExchangeOrder — реальная заявка на Bybit
+```text
+martingale_multiplier?  # M_i только PER_ORDER_M
+raw_weight
+normalized_weight
+planned_margin
+planned_notional
+```
 
-Это конкретная биржевая заявка с собственным exchange order ID и состоянием.
+В `POWER_CURVE` отдельный `M_i` не требуется.
 
-Один GridOrderConfig может порождать одну или несколько ExchangeOrders в течение жизненного цикла, например после amend/cancel-replace.
+В `PER_ORDER_M` каждый переход может иметь собственный multiplier; `M_i=1` означает отсутствие увеличения веса.
 
-Не все GridOrderConfig одновременно обязаны иметь ExchangeOrder: Active Order Window может держать часть уровней в очереди внутри платформы.
+## 2. Planned qty не является factual fill
 
-## 4. Execution / Fill — факт сделки
+В основном Manual Grid qty рассчитывается sizing layer:
 
-Execution — фактическое исполнение на бирже.
+```text
+planned_notional_i
+/ entry_price_i
+= raw_qty_i
+→ qtyStep normalization
+= remaining_entry_qty / configured_qty intent
+```
+
+Это всё ещё intent до фактического Execution.
+
+## 3. ExchangeOrder
+
+Конкретная биржевая заявка Bybit с exchange order ID / orderLinkId и runtime state.
+
+Один GridOrderConfig может порождать несколько ExchangeOrders во времени при amend/cancel-replace.
+
+Не каждый GridOrderConfig одновременно имеет ExchangeOrder: Active Order Window держит часть уровней queued.
+
+## 4. Execution / Fill
+
+Execution — ground truth фактической сделки.
 
 Один ExchangeOrder может иметь несколько executions. Они не создают новые Grid Orders.
 
 ## 5. StrategyLot / Filled Allocation
 
-После первого factual fill система отдельно учитывает исполненный объём конкретного Grid Order.
+Появляется после первого factual fill.
 
 ```text
 configured_qty = 1.0
@@ -72,65 +93,81 @@ filled_qty = 0.3
 remaining_entry_qty = 0.7
 ```
 
-После следующего fill:
+Последующие fills обновляют тот же StrategyLot и quantity-weighted average fill.
 
-```text
-fill #2 = 0.2
-filled_qty = 0.5
-```
-
-Это тот же логический StrategyLot.
-
-## 6. Factual и future части нельзя смешивать
+## 6. Factual и future части
 
 ```text
 filled_qty / open_qty
-→ factual reality
-→ не пересчитывается реструктуризацией объёма
+→ factual, immutable
 
 remaining_entry_qty
-→ future intent
-→ может быть изменён
+→ future intent, resizable
 ```
 
-`configured_qty` после реструктуризации может измениться только так, чтобы не нарушалось:
+Всегда:
 
 ```text
-configured_qty >= filled_qty
 configured_qty = filled_qty + remaining_entry_qty
+configured_qty >= filled_qty
 ```
 
-## 7. Restructuring scope
+## 7. TP
 
-Для volume restructuring используются два режима:
+У StrategyLot максимум четыре TP parts.
+
+TP quantities не могут суммарно превышать factual `open_qty`.
+
+## 8. Restructuring
+
+Поддерживаются:
 
 ```text
 RECALCULATE_ORDER
 RECALCULATE_GRID
 ```
 
-Точечный режим меняет future intent одного ордера. Полный режим может изменить future qty всех eligible pending levels стороны.
+- `RECALCULATE_ORDER` меняет future intent выбранного уровня;
+- `RECALCULATE_GRID` заново генерирует weights выбранным sizing mode и распределяет весь eligible future budget стороны.
 
-## 8. Закрытия
+Profit-taking event может инициировать новый restructuring proposal, но routing капитала между сторонами определяется отдельной политикой.
 
-TP или manual close изменяют:
-- `open_qty`;
-- `closed_qty`;
-- realized PnL конкретного StrategyLot.
+## 9. Technical validation state
 
-## 9. История изменений
+GridOrderConfig/plan должен хранить результат pre-execution validation, например:
 
-Любая существенная правка через интерфейс должна сохранять:
-- before;
-- after;
+```text
+VALID
+BELOW_MIN_ORDER_QTY
+BELOW_MIN_NOTIONAL
+INVALID_QTY_STEP
+INVALID_TICK_SIZE
+STALE_INSTRUMENT_METADATA
+MANUAL_REVIEW
+```
+
+Если один обязательный order общего плана невалиден, partial apply запрещён.
+
+## 10. Audit
+
+Каждая существенная правка сохраняет:
+- before / after;
 - timestamp;
 - source;
 - Grid Revision;
-- restructuring scope/reason, если применимо;
+- sizing mode / coefficient;
+- restructuring reason;
+- instrument metadata snapshot reference;
 - связь с ExchangeOrder / Execution / StrategyLot.
 
-Цель — всегда восстановить цепочку:
+Цепочка должна быть восстанавливаема:
 
 ```text
-INTENT → PLANNED QTY → EXCHANGE ORDER → FILL → FACTUAL LOT → RESTRUCTURED FUTURE INTENT
+INTENT
+→ SIZING
+→ VALIDATION
+→ EXCHANGE ORDER
+→ EXECUTION
+→ FACTUAL LOT
+→ NEW FUTURE INTENT
 ```
