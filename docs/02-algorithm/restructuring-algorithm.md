@@ -1,258 +1,260 @@
 # Алгоритм реструктуризации сетки
 
-**Статус: MANUAL VOLUME RESTRUCTURING CONFIRMED / AUTOMATIC REINVESTMENT ROUTING OPEN**
+**Статус: MANUAL RESTRUCTURING CONFIRMED / PROFIT-TAKING TRIGGER CONFIRMED / CAPITAL ROUTING OPEN**
 
-Реструктуризация — отдельный planning layer. Она не должна напрямую отправлять команды на Bybit.
+Реструктуризация — planning layer. Она не отправляет команды на Bybit напрямую.
 
-На текущем этапе подтверждена ручная реструктуризация объёма, запускаемая трейдером из интерфейса. Автоматическая реструктуризация после фиксации прибыли исследуется отдельно и пока не имеет финальной routing formula.
+## 1. Главный приоритет
 
-## Главный invariant
+Цель реструктуризации — в первую очередь сохранять капитал, маржу и устойчивость позиции. Увеличение объёма ради прибыли не имеет приоритета над safety constraints.
+
+## 2. Главный invariant
 
 ```text
 Factual filled/open volume → immutable
-Future/pending volume      → может пересчитываться
+Future/pending volume      → recalculable
 ```
 
-Нельзя уменьшать или перераспределять уже исполненный объём так, будто сделки не было.
+Нельзя изменять историю фактических fills задним числом.
 
-## Приоритет стратегии
+## 3. Входы
 
-Первый приоритет реструктуризации — сохранение и защита капитала, маржи и позиций. Увеличение объёма или доходности отдельного Grid Order не должно иметь приоритет над безопасностью всей позиции.
-
-Поэтому основное направление исследования — full-grid / portfolio-level restructuring, а не обязательное возвращение прибыли в тот же Grid Order, который её заработал.
-
-## Входы
-
-Используются только объективные данные стратегии и аккаунта:
-- current Mark Price;
-- Long / Short factual position;
-- Long / Short factual average;
+Используются:
+- Mark Price;
+- factual Long / Short position;
 - StrategyLots;
-- filled_qty / open_qty;
-- average fill;
-- realized PnL;
-- available margin / capital snapshot;
-- current allocation;
+- `filled_qty`, `open_qty`, average fill;
+- wallet/equity/available margin и другие factual account fields;
+- realized PnL / fees / funding;
+- current Long/Short/Reserve allocation;
 - pending Grid Orders;
-- per-order Martingale multipliers;
+- sizing mode стороны;
+- `K` или `M_i`;
 - leverage;
-- Bybit instrument limits;
+- актуальные Bybit instrument limits;
 - current Grid Revision.
 
-Внешние новости, sentiment, индикаторы и прогнозы не используются.
+## 4. Триггеры
 
-## Подтверждённые manual triggers
+### Manual triggers
 
-### 1. RECALCULATE_ORDER
+Подтверждены:
 
-Трейдер выбирает конкретный Grid Order и запускает перерасчёт его future qty.
+```text
+RECALCULATE_ORDER
+RECALCULATE_GRID
+```
+
+### Profit-taking trigger
+
+Исполнение прибыльного TP/close является обязательным trigger для:
+
+```text
+refresh factual account state
+→ recalculate available future budget
+→ produce new Restructuring/Sizing Proposal
+```
+
+Это **не означает**, что система уже знает, куда именно должен пойти новый капитал. Routing между Long/Short остаётся OPEN.
+
+## 5. RECALCULATE_ORDER
+
+Трейдер выбирает конкретный future/partially-filled Grid Order.
 
 Правила:
-- factual `filled_qty` не меняется;
-- `open_qty` не меняется этим действием;
-- остальные уровни не должны автоматически пересчитываться;
-- новый remaining qty должен помещаться в доступный future budget;
-- применяются актуальные leverage и instrument limits;
-- результат создаёт новую Grid Revision.
+- factual `filled_qty/open_qty` не меняются;
+- меняется только future remainder выбранного order;
+- остальные levels не каскадируются автоматически;
+- новый target должен помещаться в реально доступный future budget;
+- результат проходит Bybit validation;
+- создаётся новая Grid Revision/RestructuringEvent.
 
-Это точечный перерасчёт, а не каскадирование Martingale chain по всей сетке.
+## 6. RECALCULATE_GRID
 
-### 2. RECALCULATE_GRID
-
-Трейдер запускает перерасчёт всей future части Long или Short.
-
-Поток:
+Пересчитывается вся eligible future часть выбранной стороны.
 
 ```text
 Fresh factual account state
 ↓
-Current Side Budget
+Effective Side Budget
 ↓
-Subtract Factual Used Capital
+- Factual Used Capital
 ↓
-Subtract Locked Future Capital
+- Locked Future Capital
 ↓
-Available Future Budget
+Available Future Margin Budget
 ↓
-Build cumulative per-order Martingale weights
+× leverage
 ↓
-Normalize weights across eligible pending levels
+Future Notional Budget
 ↓
-Recalculate remaining_entry_qty
+Generate weights by selected sizing mode
 ↓
-Validate Bybit limits
+Normalize weights
+↓
+Calculate notional_i / qty_i
+↓
+Bybit hard validation
 ↓
 RestructuringPlan
 ↓
 Grid Revision
 ```
 
-## Исследуемый automatic trigger: profitable close / Take Profit
+## 7. Sizing modes внутри restructuring
 
-Новое направление исследования:
-
-```text
-Profitable TP / profitable close
-↓
-refresh factual account state
-↓
-refresh realized PnL / available capital
-↓
-automatic restructuring trigger
-↓
-recalculate future budget
-↓
-select reinvestment routing policy
-↓
-new RestructuringPlan
-```
-
-Пока **не подтверждено**, должен ли такой trigger автоматически применять новый plan или только формировать proposal для Risk Check / Manual Review.
-
-## Маршрутизация нового капитала между Long и Short — OPEN
-
-Long и Short используют общий factual cross-margin account state, но логические бюджеты стратегии могут перераспределяться по отдельным правилам.
-
-Сейчас рассматриваются три кандидата:
-
-### A. Same-Side Reinvestment
+### POWER_CURVE
 
 ```text
-Long realized profit  → пересчёт future Long Grid
-Short realized profit → пересчёт future Short Grid
+raw_weight_i = (i/N)^K
 ```
 
-Это самый простой и предсказуемый вариант, но он может быть не оптимальным, если противоположная сторона в моменте более уязвима.
+`K` задаётся отдельно для Long и Short.
 
-### B. Risk-Priority Cross-Side Reinvestment
-
-После trigger система оценивает, какая сторона требует большего усиления с точки зрения сохранения позиции.
-
-Один из кандидатов-факторов — расстояние Mark Price до factual average Long / Short. Если текущая цена ближе к средней одной стороны, эта сторона может получить больший приоритет для future budget, чтобы будущие входы улучшали её среднюю и запас безопасности.
-
-Одной дистанции до average пока недостаточно для финального правила. Возможно понадобятся также liquidation distance, factual used margin, allocation utilization, reserve, pending exposure и эффект нового qty на weighted average.
-
-### C. Reinvest Both Sides
-
-Новый доступный капитал распределяется сразу между Long и Short согласно выбранной allocation policy, а затем внутри каждой стороны — по eligible pending orders.
-
-Проблема этого варианта: при малой сумме realized profit дробление капитала может привести к ордерам ниже минимального lot/notional Bybit.
-
-Подробно кандидаты зафиксированы в `docs/05-research/reinvestment-routing-research.md`.
-
-## Per-Order Martingale Chain
-
-Для всей сетки веса считаются последовательно:
+### PER_ORDER_M
 
 ```text
 w1 = 1
-w2 = w1 × M2
-w3 = w2 × M3
-...
-wn = w(n-1) × Mn
+w_i = w_(i-1) × M_i
 ```
 
-После этого веса eligible future levels нормализуются на доступный future budget.
+Advanced mode. Каждый переход имеет собственный multiplier.
 
-Изменение `M` одного уровня влияет на него и потенциально на последующие веса только при `RECALCULATE_GRID`.
+Другие Martingale modes в текущий MVP не входят.
 
-При `RECALCULATE_ORDER` изменения не должны автоматически каскадировать на остальные уровни.
+## 8. Добавление нового Grid Order
 
-## Добавление новых уровней
+После добавления нового level трейдер может:
+- рассчитать только новый order;
+- либо пересчитать всю eligible future Grid.
 
-Если трейдер добавил новый ордер в существующую сетку, доступны два действия:
+При полном пересчёте новый order участвует в текущем sizing mode.
+
+## 9. Что именно перераспределяется
+
+Реструктуризация не обязана возвращать прибыль в тот Grid Order, который её заработал.
+
+Текущее подтверждённое направление — full-grid sizing как основной способ перераспределить future budget стороны.
+
+При этом ещё OPEN:
+- same-side reinvest;
+- cross-side risk-priority reinvest;
+- both-sides reinvest;
+- точная доля/состав reinvestable capital.
+
+## 10. Capital routing между Long и Short
+
+Long и Short используют одну factual cross-margin reality, но могут иметь независимые logical budgets.
+
+Возможные routing policies исследуются отдельно:
 
 ```text
-Calculate only this new order
-или
-Recalculate entire future grid
+A. Long profit  → Long future Grid
+   Short profit → Short future Grid
+
+B. New capital → side with higher risk/need
+
+C. New capital → both sides by allocation policy
 ```
 
-Второй вариант включает новый уровень в общую Martingale chain и перераспределяет eligible future budget.
+Ни одна из этих формул пока не утверждена как финальная.
 
-## Factual Used Capital
+## 11. Candidate risk-priority idea
 
-До перераспределения система должна учесть капитал, уже занятый фактически открытым объёмом стратегии.
+Один из исследуемых факторов — положение Mark Price относительно factual LongAvg / ShortAvg.
+
+Если Mark ближе к средней одной стороны, эта сторона потенциально может иметь больший safety-priority для будущего капитала.
+
+Но одной distance-to-average недостаточно. Могут потребоваться:
+- liquidation distance;
+- margin utilization;
+- available margin;
+- current exposure;
+- future pending exposure;
+- reserve;
+- влияние нового order на weighted average.
+
+Статус: CANDIDATE.
+
+## 12. Hard Safety Gate — атомарность плана
+
+После любого расчёта проверяются:
+
+```text
+qty >= minOrderQty
+qty aligned to qtyStep
+notional >= minNotionalValue
+price aligned to tickSize
+```
+
+Если хотя бы один обязательный order плана после нормализации невалиден:
+
+```text
+RESTRUCTURING_PLAN_INVALID
+→ MANUAL_REVIEW
+→ NO PARTIAL APPLY
+→ NO AUTOMATIC CONTINUE
+```
+
+Execution/Planner не имеет права автоматически:
+- увеличить qty за счёт Reserve;
+- перенести капитал с другой стороны;
+- пропустить невалидный order;
+- изменить `K`, `M_i`, leverage или allocation;
+- исполнить только валидную часть плана.
+
+## 13. Factual Used Capital
 
 Концептуально:
 
 ```text
-AvailableFutureBudget
+AvailableFutureMarginBudget
 = EffectiveSideBudget
 - FactualUsedCapital
 - LockedFutureCapital
 ```
 
-Точная production-семантика `EffectiveSideBudget`/`capital_base` должна быть подтверждена отдельно, чтобы не допустить двойного учёта equity/PnL.
+Точная production-семантика `EffectiveSideBudget/capital_base` пока OPEN, чтобы исключить двойной учёт PnL/margin.
 
-## Hard Safety Gate: minimum lot / notional
-
-Независимо от manual или будущего automatic trigger, любой новый RestructuringPlan должен пройти атомарную техническую проверку instrument limits.
-
-Минимум:
-- `minOrderQty`;
-- `qtyStep`;
-- `minNotionalValue`;
-- `tickSize`.
-
-Если после нормализации **хотя бы один обязательный ордер нового плана** не проходит актуальные Bybit limits:
-
-```text
-RESTRUCTURING_PLAN_INVALID
-↓
-MANUAL_REVIEW
-↓
-NO PARTIAL APPLY
-↓
-NO AUTOMATIC CONTINUE
-```
-
-Нельзя допускать частичное применение реструктуризации, при котором одни уровни выставились, а другие были отвергнуты биржей из-за минимального lot/notional.
-
-Execution Engine не имеет права самостоятельно:
-- увеличивать qty до минимума за счёт Reserve;
-- переносить капитал с другой стороны;
-- пропускать невалидный уровень и продолжать остальные;
-- менять allocation или Martingale для обхода ошибки.
-
-Для исправления нужен новый planning calculation либо manual review.
-
-## Выход: RestructuringPlan
+## 14. RestructuringPlan
 
 Минимально:
 
 ```text
 RestructuringPlan
 - scope: ORDER | GRID
-- target_order_id?
 - side
+- trigger
+- target_order_id?
 - source_revision
 - factual_state_snapshot
+- capital_snapshot
+- sizing_mode
+- power_k?
+- per_order_m?
 - effective_side_budget
 - factual_used_capital
 - locked_future_capital
-- available_future_budget
-- reinvestment_trigger?
-- reinvestment_source_side?
-- proposed_target_side_allocation?
+- available_future_margin_budget
+- future_notional_budget
 - orders_before
 - orders_after
-- instrument_limits_snapshot
+- instrument_metadata_snapshot
 - validation
-- reason
+- manual_review_reason?
 - target_grid_revision
 ```
 
-## Дальнейший pipeline
+## 15. Pipeline
 
 ```text
-Current State
+Trigger / Manual Request
 ↓
-Manual Request or Future Automatic Trigger
+Fresh State
 ↓
-RestructuringPlan
+Sizing / Restructuring Proposal
 ↓
-Hard Instrument Validation
+Hard Technical Validation
 ↓
 Risk Manager
 ↓
@@ -265,29 +267,15 @@ Execution Engine
 Bybit
 ```
 
-В shadow/read-only MVP результат остаётся virtual и не отправляется на биржу.
+В shadow/read-only режиме plan остаётся virtual.
 
-## Что подтверждено
+## 16. Что OPEN
 
-- ручной перерасчёт одного future order;
-- ручной перерасчёт всей future grid;
-- factual fills immutable;
-- future qty может изменяться;
-- добавление новых уровней может сопровождаться перерасчётом;
-- per-order Martingale chain используется при полном перерасчёте;
-- restructuring создаёт новую Grid Revision;
-- geometry не должна автоматически меняться только из-за sizing recalculation;
-- невалидный по биржевым минимумам restructuring plan не должен частично применяться и должен уходить в Manual Review.
-
-## Что остаётся OPEN
-
-- финальная automatic trigger policy после TP/profitable close;
-- same-side vs cross-side vs both-sides reinvestment routing;
-- формула приоритета Long/Short при cross-side routing;
-- что именно реинвестируется: net realized profit или released capital + profit;
-- точная production-формула capital_base;
-- automatic volume recovery после TP;
-- автоматический rebase;
-- trailing trigger policy;
-- autonomous decision rules;
-- Risk Manager limits.
+- production `capital_base`;
+- reinvestable capital definition;
+- Long/Short routing formula;
+- cross-side safety priority;
+- automatic rebase/trailing;
+- recovery after TP;
+- exact Risk Manager thresholds;
+- automatic application policy after profit-taking trigger.
