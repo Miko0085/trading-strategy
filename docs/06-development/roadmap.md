@@ -2,114 +2,128 @@
 
 ## Основной принцип
 
-Исследование стратегии, доменная модель и механический execution развиваются параллельно, но autonomous decisions нельзя реализовывать раньше подтверждения правил.
+Исследование стратегии, sizing, execution и risk развиваются параллельно, но autonomous decisions нельзя реализовывать раньше подтверждения правил.
 
-Текущий продуктовый приоритет — Manual Grid с автоматическим future sizing и ручной реструктуризацией объёма.
+Текущий продуктовый приоритет — Manual Grid с двумя sizing modes, hard Bybit validation и manual/full-grid restructuring.
 
 ## Этап 1A — Recorder / Strategy Capture
 
 - machine truth Bybit;
 - trader explanations;
 - timeline;
-- связь intent и фактических событий;
+- intent ↔ factual events;
 - restructuring observations;
-- подтверждение правил.
+- подтверждение rules.
 
-Recorder остаётся permanently read-only.
+Recorder permanently read-only.
 
-## Этап 1B — Manual Grid Domain + Sizing
+## Этап 1B — Manual Grid + Sizing
 
-Формализовать и реализовать:
-- Grid / GridRevision;
-- GridOrderConfig;
-- Entry input PRICE | PERCENT;
-- per-order Martingale multiplier;
-- cumulative Martingale chain;
-- automatic future qty from side budget;
-- factual used capital accounting;
-- remaining_entry_qty;
-- Active Order Window;
-- StrategyLot / partial fill semantics;
-- TP mechanics;
-- Bybit instrument normalization.
+Реализовать:
+- Long/Short independent Grid;
+- GridRevision / GridOrderConfig;
+- Entry PRICE | PERCENT;
+- `POWER_CURVE` side-level sizing;
+- `PER_ORDER_M` advanced sizing;
+- Future Margin Budget → Notional → Qty;
+- instrument normalization;
+- max 4 TP parts;
+- StrategyLot after first fill;
+- Active Order Window.
 
-Generated Grid остаётся optional constructor и не блокирует этот этап.
+Не добавлять отдельные Linear/Equal/Reverse/Global-Geometric modes в MVP.
 
-## Этап 1C — Manual Volume Restructuring
+## Этап 1C — Instrument Metadata + Hard Validation
 
-Реализовать сначала в shadow/read-only режиме:
+- Bybit Instruments Info;
+- local InstrumentSpec cache;
+- refresh/freshness policy;
+- `minOrderQty`;
+- `qtyStep`;
+- `minNotionalValue`;
+- `tickSize`;
+- atomic `MANUAL_REVIEW` if any mandatory order invalid.
+
+## Этап 1D — Manual Volume Restructuring
 
 - `RECALCULATE_ORDER`;
 - `RECALCULATE_GRID`;
-- добавление новых уровней в существующую сетку;
-- пересчёт только future/pending qty;
+- add level during active Grid;
 - immutable factual fills;
-- before/after audit;
-- новая Grid Revision;
-- validation against current side budget and Bybit limits.
+- locked future qty;
+- before/after preview;
+- Grid Revision;
+- recalculation by selected sizing mode.
 
-Автоматические triggers на этом этапе не нужны.
+## Этап 1E — Profit-Taking Trigger
 
-## Этап 1D — Execution Engine Core
+- profitable TP/close event;
+- fresh account snapshot;
+- deduplicated restructuring trigger;
+- new sizing proposal;
+- no automatic cross-side routing until rule confirmed.
 
-Сделать детерминированный исполнительный слой:
+## Этап 1F — Execution Engine Core
+
 - ApprovedExecutionPlan;
-- ExecutionCommand;
-- Bybit validation;
-- idempotency;
-- audit;
-- reconciliation;
+- idempotent ExecutionCommand;
+- PLACE/AMEND/CANCEL/CLOSE;
+- Active Window runtime;
+- WS/REST reconciliation;
+- orderLinkId correlation;
+- duplicate/out-of-order handling;
 - restart recovery;
-- paper/testnet-first;
-- Active Order Window runtime.
+- testnet/demo-first.
 
-## Этап 1E — Restructuring Research
+## Этап 1G — Reinvestment Routing Research
 
-Параллельно исследовать только неподтверждённую автоматику:
-- automatic triggers;
-- recovery после разгрузки;
-- reinvestment triggers;
-- rebase/trailing policy;
-- exact production capital_base;
-- automatic allocation changes.
+Исследовать:
+- same-side;
+- cross-side risk-priority;
+- both-side;
+- production `capital_base`;
+- reinvestable capital definition;
+- liquidation/risk priority;
+- recovery;
+- trailing/rebase.
 
 ## Этап 2 — Simulation / Shadow / Testnet
 
-- воспроизводить Manual Grid;
-- проверять per-order sizing;
-- проигрывать `RECALCULATE_ORDER` и `RECALCULATE_GRID`;
-- проверять partial fills;
-- добавлять новые levels во время cycle;
-- сравнивать планы с действиями трейдера;
-- учитывать fees/funding/slippage;
-- проверять restart/reconciliation.
+Проверить:
+- Power Curve;
+- Per-Order M;
+- budget changes;
+- minimum-lot failures;
+- partial fills;
+- 4 TP parts;
+- Active Window;
+- restructuring;
+- external intervention;
+- network/API races;
+- restart/reconciliation.
 
 ## Этап 3 — Risk Manager
 
-Реализовать отдельный gate:
-- ALLOW;
-- MODIFY;
-- DENY;
 - capital/margin/exposure limits;
 - reserve;
-- safety states.
+- liquidation distance;
+- ALLOW/MODIFY/DENY;
+- emergency states.
 
 ## Этап 4 — Controlled Real Execution
 
 Только отдельным решением:
-- production write-enabled key;
+- production write key;
 - hard limits;
-- emergency controls;
+- kill switch;
 - limited rollout;
-- обязательный audit/reconciliation.
+- audit/reconciliation.
 
-## Этап 5 — Controlled Autonomous Strategy Decisions
+## Этап 5 — Controlled Autonomous Restructuring
 
-Только после подтверждения и тестирования:
-- automatic restructuring triggers;
-- automatic reinvest;
-- volume recovery rules;
-- automatic rebase/trailing;
+Только после подтверждения routing/risk rules:
+- automatic application after profitable TP;
+- automatic Long/Short routing;
+- recovery;
+- rebase/trailing;
 - automatic Grid revisions.
-
-Неизвестные правила нельзя заполнять предположениями.
