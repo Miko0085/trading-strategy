@@ -5,62 +5,70 @@
 Документация предназначена для:
 - трейдера;
 - разработчика;
-- AI/Codex-агента;
+- AI/Codex/Claude-агента;
 - будущего исследователя стратегии.
 
-Основной язык документации — **русский**. Английские технические названия сохраняются только там, где это полезно для связи с кодом, API или общепринятым биржевым термином. При первом упоминании термин по возможности поясняется по-русски.
+Основной язык — русский. Английские технические названия сохраняются для связи с кодом/API.
 
-## Кодировка
+## Текущий канонический scope
 
-Все Markdown-файлы документации должны храниться в **UTF-8** без специальной перекодировки. Git, GitHub и GitBook корректно работают с русским UTF-8 текстом. Имена папок и файлов пока остаются латиницей, чтобы не ломать ссылки, GitBook-навигацию и инструменты разработки.
+Основной продуктовый workflow:
 
-## Что находится в этой документации
+```text
+Manual Long / Short Grid
+→ independent Geometry
+→ POWER_CURVE или PER_ORDER_M sizing
+→ Margin → Notional → Qty
+→ Bybit hard validation
+→ Active Order Window
+→ Factual Executions / StrategyLots
+→ TP1..TP4
+→ Profit-taking restructuring trigger
+```
 
-- подтверждённая механика стратегии;
-- гипотезы и объяснения трейдера;
-- открытые вопросы;
-- архитектура Recorder и Execution Engine;
-- будущий Risk Manager;
-- история решений и план разработки.
+Ключевые ограничения:
+- Recorder permanently read-only;
+- factual fills immutable;
+- Generated Grid — legacy/optional;
+- другие Martingale modes вне `POWER_CURVE` и `PER_ORDER_M` сейчас не входят в MVP;
+- любой mandatory order ниже Bybit limits блокирует весь новый plan и переводит его в `MANUAL_REVIEW`;
+- capital routing между Long и Short пока остаётся исследовательским вопросом.
+
+## Главные страницы
+
+- [Обзор стратегии](01-strategy/strategy-overview.md)
+- [Механика сетки](01-strategy/grid-mechanics.md)
+- [Мартингейл и распределение объёма](01-strategy/martingale-sizing.md)
+- [Алгоритм реструктуризации](02-algorithm/restructuring-algorithm.md)
+- [Интеграция с Bybit](04-platform/bybit-integration.md)
+- [Модель данных](04-platform/data-model.md)
+- [Подтверждённые правила](05-research/confirmed-rules.md)
+- [Открытые вопросы](05-research/open-questions.md)
+- [Журнал решений](06-development/decisions.md)
 
 ## Что здесь не публикуется
 
-- реальные API-ключи;
-- приватные account/wallet dumps;
-- реальные order IDs и event IDs;
-- голосовые файлы;
-- приватная история конкретного торгового счёта.
-
-## Структура
-
-| Раздел | Содержание |
-|---|---|
-| [00-overview/](00-overview/project-overview.md) | Обзор проекта, цели, принципы, глоссарий |
-| [01-strategy/](01-strategy/strategy-overview.md) | Long/Short, сетка, ордера, Strategy Lot, Take Profit |
-| [02-algorithm/](02-algorithm/current-algorithm.md) | Базовый алгоритм и автоматы состояний |
-| [03-risk/](03-risk/risk-register.md) | Реестр рисков и будущий Risk Manager |
-| [04-platform/](04-platform/platform-overview.md) | Recorder, Execution Engine, Bybit, модель данных |
-| [05-research/](05-research/trader-observations.md) | Наблюдения, гипотезы, подтверждённые правила, вопросы |
-| [06-development/](06-development/roadmap.md) | План разработки, история изменений, архитектурные решения |
+- API secrets;
+- private account/wallet dumps;
+- реальные order/event IDs;
+- voice files;
+- private raw trading history.
 
 ## Статусы знаний
 
 | Статус | Значение |
 |---|---|
-| **НАБЛЮДАЕМЫЙ ФАКТ (OBSERVED FACT)** | Факт из Bybit / Recorder |
-| **ОБЪЯСНЕНИЕ ТРЕЙДЕРА (TRADER EXPLANATION)** | Объяснение логики со слов трейдера |
-| **ГИПОТЕЗА (CANDIDATE)** | Возможное правило, которое ещё нужно подтвердить |
-| **ПОДТВЕРЖДЕНО (CONFIRMED)** | Правило явно подтверждено |
-| **ЭКСПЕРИМЕНТАЛЬНО (EXPERIMENTAL)** | Механика обсуждается или тестируется |
-| **БУДУЩЕЕ (FUTURE)** | Будущая функция |
-| **ОТКРЫТЫЙ ВОПРОС (OPEN QUESTION)** | Нужен ответ трейдера |
-| **ОТКЛОНЕНО (REJECTED)** | Рассматривалось и отвергнуто |
-| **ПРОТИВОРЕЧИЕ (CONTRADICTION)** | Есть несовместимые версии |
+| **OBSERVED FACT** | факт из Bybit / Recorder |
+| **TRADER EXPLANATION** | объяснение логики трейдером |
+| **CANDIDATE** | гипотеза, требующая подтверждения |
+| **CONFIRMED** | явно подтверждённое правило |
+| **EXPERIMENTAL** | тестируемая механика |
+| **FUTURE** | будущая функция |
+| **OPEN QUESTION** | нерешённый вопрос |
+| **REJECTED** | отвергнутая идея |
+| **SUPERSEDED** | правило заменено новым подтверждением |
+| **CONTRADICTION** | несовместимые версии требуют уточнения |
 
-Нельзя переводить гипотезу в подтверждённое правило без явного подтверждения трейдера.
+Нельзя повышать CANDIDATE до CONFIRMED без явного подтверждения.
 
-## Главный принцип
-
-Recorder фиксирует реальность и всегда остаётся read-only. Execution Engine может отдельно исполнять заранее заданную конфигурацию. Неизвестные торговые решения не придумываются автоматически.
-
-GitHub остаётся источником истины, а GitBook публикует содержимое этой папки через Git Sync.
+GitHub является source of truth, GitBook публикует содержимое `docs/` через Git Sync.
