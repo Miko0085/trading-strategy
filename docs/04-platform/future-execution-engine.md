@@ -1,93 +1,141 @@
 # Execution Engine — механизм безопасного исполнения
 
-**Статус: СЛЕДУЮЩИЙ СЛОЙ ПЛАТФОРМЫ / ЕЩЁ НЕ РЕАЛИЗОВАН**
+**Статус: FUTURE WRITE-CAPABLE COMPONENT / НЕ РЕАЛИЗОВАН**
 
-Execution Engine — отдельный write-capable компонент. Его задача — не принимать стратегические решения, а безопасно исполнять уже утверждённый план.
+Execution Engine не принимает стратегических решений. Он исполняет только уже утверждённый план.
 
 ## Вход
 
-Execution Engine получает ApprovedExecutionPlan с конкретными PLACE / AMEND / CANCEL / TP actions, qty, price, side и source revision.
+```text
+ApprovedExecutionPlan
+- PLACE / AMEND / CANCEL / TP / CLOSE actions
+- symbol
+- side / positionIdx
+- price
+- qty
+- source Grid Revision
+- instrument metadata snapshot
+- idempotency key
+```
 
 ## Обязанности
 
-- валидировать команду;
-- проверять Bybit instrument limits;
+- повторно валидировать command перед отправкой;
+- использовать актуальные Bybit instrument limits;
 - обеспечивать idempotency;
 - защищаться от duplicate command;
-- отправлять write-запрос;
-- отслеживать ack/order state;
-- связывать ExchangeOrder с исходной конфигурацией;
-- отслеживать fills;
-- синхронизировать TP;
+- отправлять write request;
+- отслеживать REST acknowledgement и private WS factual state;
+- связывать ExchangeOrder с GridOrderConfig;
+- дедуплицировать executions;
 - выполнять reconciliation;
+- синхронизировать TP;
 - сохранять command audit;
-- безопасно восстанавливаться после restart.
+- восстанавливаться после restart/reconnect.
 
-## Что Execution Engine не решает
+## Hard Technical Gate
 
-Он не должен:
-- выбирать новый qty;
-- рассчитывать compound allocation;
-- решать, когда сделать restructuring;
-- выбирать новую Grid Revision;
-- изменять Long / Short allocation;
-- определять, хватает ли risk budget;
+Перед каждым PLACE/AMEND:
+
+```text
+instrument status valid
+qty >= minOrderQty
+qty aligned to qtyStep
+notional >= minNotionalValue
+price aligned to tickSize
+position mode valid
+metadata fresh enough for policy
+```
+
+Если command/plan невалиден:
+
+```text
+DO NOT SEND TO BYBIT
+→ FAILED_PRE_EXECUTION_VALIDATION
+→ MANUAL_REVIEW
+```
+
+Если план атомарный и один обязательный order invalid, Execution Engine не должен исполнять остальные команды как partial apply.
+
+## Что Execution Engine не имеет права делать автоматически
+
+- увеличивать qty до биржевого минимума;
+- использовать Reserve без нового plan;
+- переносить капитал между Long/Short;
+- менять `K` / `M_i` / leverage / allocation;
+- удалять невалидный Grid Order и продолжать;
+- выбирать новый sizing;
+- решать, куда реинвестировать прибыль;
 - прогнозировать рынок.
-
-Это обязанности Decision Layer и Risk Manager.
 
 ## Active Order Window
 
-Execution Engine механически применяет политику Active Order Window, заданную текущей Grid Revision.
+Execution Engine механически поддерживает `active_order_count` текущей Grid Revision.
 
-Он не решает сам, сколько уровней должно быть активно.
+Queued GridOrderConfig не создаёт ExchangeOrder, пока не наступило разрешённое событие активации.
 
-## Частичные fills и TP
+## Partial fills
 
 После первого fill:
-- появляется фактически исполненный объём;
-- обновляется filled_qty;
-- пересчитывается actual average entry;
-- TP рассчитывается от фактического объёма;
-- TP выставляется лимитными заявками.
+- создаётся/обновляется StrategyLot;
+- обновляется factual `filled_qty`;
+- пересчитывается factual average fill;
+- TP1..TP4 работают только с factual open qty.
 
-Технический способ синхронизации TP при последующих fills ещё требует отдельного решения.
+Уже исполненный объём нельзя отменить или уменьшить restructuring command.
 
-## Ручные изменения через интерфейс
+## REST / WS semantics
 
-Изменение трейдером параметров платформы должно сначала формировать новую revision/plan, после чего Execution Engine применяет разрешённые изменения.
+REST acknowledgement не равен окончательному состоянию.
 
-Execution Engine не должен редактировать стратегическую конфигурацию сам.
+Execution Engine обязан корректно обрабатывать:
+- REST timeout при фактически созданном order;
+- WS event раньше REST response;
+- duplicate WS/REST execution;
+- out-of-order events;
+- cancel/fill race;
+- amend/partial-fill race;
+- reconnect;
+- restart.
 
-## Внешнее вмешательство через терминал Bybit
+Factual executions являются ground truth.
 
-При обнаружении расхождения:
-- остановить автоматическое предположение о текущем state;
-- уведомить трейдера;
-- получить подтверждение;
-- принять external state либо восстановить platform state, если это не требует самостоятельного нового trade decision.
+## Reconciliation
 
-Уже случившиеся executions не откатываются.
+После reconnect/restart и при неопределённом command result:
 
-## Биржевые ограничения
+```text
+Platform Intent
+vs
+Actual Bybit Orders / Executions / Positions
+```
 
-Перед каждым PLACE/AMEND получать или использовать актуальный cache Bybit instrument metadata и проверять:
-- minOrderQty;
-- qtyStep;
-- minNotionalValue;
-- tickSize.
+Неопределённый результат не считается автоматически success или failure.
 
-Нельзя глобально хардкодить минимальный order size.
+## External intervention
+
+Если trader вручную меняет state на Bybit:
+
+```text
+DIFF
+→ notify
+→ block hidden strategic recalculation
+→ Adopt or Restore after confirmation
+```
+
+Factual fills остаются immutable.
 
 ## Safety requirements
 
 Обязательны:
-- separate write-enabled API key;
-- paper/testnet-first;
-- command idempotency;
-- audit trail;
+- отдельный write-enabled API key;
+- testnet/demo/paper-first;
+- idempotency;
+- orderLinkId/platform command correlation;
+- command audit;
 - reconciliation;
 - restart recovery;
 - kill switch;
-- explicit command validation;
-- запрет импортировать write path в Recorder.
+- stale-state detection;
+- hard instrument validation;
+- no write path inside Recorder.
