@@ -1,53 +1,86 @@
 # Обзор проекта
 
-**Статус: ПОДТВЕРЖДЁННАЯ АРХИТЕКТУРА / ИССЛЕДУЕМАЯ СТРАТЕГИЯ**
+**Статус: ПОДТВЕРЖДЁННАЯ АРХИТЕКТУРА / ЧАСТИЧНО ОТКРЫТАЯ CAPITAL ROUTING LOGIC**
 
-Проект разделён на независимые слои.
+## Главная цель
+
+Платформа автоматизирует детерминированную Long/Short Grid-стратегию в Hedge Mode, сохраняя приоритет безопасности капитала, маржи и позиции.
 
 ## 1. Recorder — что реально произошло
 
-Read-only контур, который записывает рынок, orders, executions, positions, wallet, trader notes и timeline.
+Permanently read-only контур:
+- orders;
+- executions;
+- positions;
+- wallet;
+- market/account state;
+- trader notes;
+- timeline.
 
 Recorder никогда не торгует.
 
-## 2. Strategy / Configuration — что трейдер хочет сделать
+## 2. Strategy / Configuration
 
-Здесь хранятся подтверждённые правила, Grid Revision и параметры, введённые трейдером.
+Хранит:
+- Manual Grid Geometry;
+- Long/Short allocation;
+- leverage;
+- sizing mode;
+- `K` / `M_i`;
+- Active Order Window;
+- TP1..TP4;
+- Grid Revision.
 
-## 3. Decision Layer — что нужно сделать сейчас
+## 3. Sizing / Planning
 
-Состоит из двух направлений:
-- Base Grid Planner — механически строит текущую сетку;
-- Restructuring Planner — в будущем формирует RestructuringPlan.
+Рассчитывает future intent:
 
-Decision Layer не имеет прямого доступа к Bybit.
+```text
+Future Margin Budget
+→ Future Notional Budget
+→ POWER_CURVE или PER_ORDER_M
+→ notional_i
+→ qty_i
+```
 
-## 4. Risk Manager — можно ли это делать
+Sizing не меняет factual fills.
 
-Получает proposed plan и возвращает ALLOW / MODIFY / DENY.
+## 4. Restructuring Planner
 
-## 5. Execution Engine — как безопасно исполнить
+Формирует новый future plan после manual command или confirmed profit-taking trigger.
 
-Получает утверждённый Execution Plan и детерминированно выполняет его через Bybit API.
+Routing нового capital между Long/Short пока OPEN.
 
-Он не выбирает sizing, не решает когда реструктурировать Grid и не принимает risk decisions.
+## 5. Technical Validation
 
-## 6. Research
+Проверяет актуальные Bybit instrument limits и техническую исполнимость всего plan.
 
-Связывает:
-- trader intent;
-- configuration;
-- фактические Bybit events;
-- trader explanation;
-- result.
+Любой mandatory invalid order → `MANUAL_REVIEW`, без partial apply.
 
-Цель — формализовать оставшиеся неизвестные правила, прежде всего реструктуризацию.
+## 6. Risk Manager
+
+Отдельно оценивает capital/margin/exposure/liquidation risk и возвращает ALLOW/MODIFY/DENY.
+
+## 7. Execution Engine
+
+Детерминированно исполняет только approved plan через Bybit API, обеспечивает idempotency, reconciliation, audit и restart recovery.
+
+## 8. Research
+
+Формализует оставшиеся неизвестные правила:
+- production `capital_base`;
+- reinvestable capital;
+- Long/Short routing;
+- recovery/trailing;
+- risk thresholds.
 
 ## Главная архитектурная формула
 
 ```text
-DECISION = что хотим сделать
-RISK     = можно ли это делать
-EXECUTION= как это безопасно сделать
-RECORDER = что реально произошло
+CONFIGURATION = что настроил трейдер
+SIZING        = сколько future capital получает каждый order
+VALIDATION    = технически исполним ли plan
+RISK          = безопасен ли plan
+EXECUTION     = как отправить commands
+RECORDER      = что реально произошло
 ```
